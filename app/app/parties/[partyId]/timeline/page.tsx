@@ -1,171 +1,218 @@
-import { TaskDoneToggle, TaskLockToggle } from "@/components/party/task-toggles";
+import { TimelineBoard, type TimelineHelper, type TimelineTask } from "@/components/party/timeline-board";
+import { TimelineSyncBanner } from "@/components/party/timeline-sync-banner";
 import { formatPartyWhen } from "@/lib/calendar";
+import { syncPartyTimeline } from "@/lib/actions/timeline";
 import { createClient } from "@/lib/supabase/server";
-import { Clock3, Lock, UserRound } from "lucide-react";
 import { notFound } from "next/navigation";
 
-function formatTaskWhen(iso: string | null, timeZone: string) {
-  if (!iso) return "Unscheduled";
-  const start = new Date(iso);
-  const day = new Intl.DateTimeFormat("en-US", {
-    weekday: "short",
-    timeZone,
-  }).format(start);
-  const time = new Intl.DateTimeFormat("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone,
-  }).format(start);
-  return `${day} · ${time}`;
-}
+const PARTY_FIELDS = "id, starts_at, ends_at, prep_starts_at, timezone, timeline_dirty";
 
 export default async function TimelinePage({ params }: { params: Promise<{ partyId: string }> }) {
   const { partyId } = await params;
   const supabase = await createClient();
 
-  const { data: party } = await supabase
+  let { data: party } = await supabase
     .from("parties")
-    .select("id, starts_at, timezone")
+    .select(PARTY_FIELDS)
     .eq("id", partyId)
     .maybeSingle();
   if (!party) notFound();
 
-  const { data: tasks } = await supabase
-    .from("tasks")
-    .select("*")
-    .eq("party_id", partyId)
-    .order("sort_order");
-
-  const list = tasks ?? [];
-  const complete = list.filter((task) => task.status === "done").length;
-  const next = list.find((task) => task.status !== "done");
-  const { date, time } = formatPartyWhen(party.starts_at, party.timezone);
-
-  const workloadMap = new Map<string, number>();
-  for (const task of list) {
-    const name = task.assigned_name?.trim() || "Unassigned";
-    workloadMap.set(name, (workloadMap.get(name) ?? 0) + 1);
+  // Fallback only — normal path syncs via after() on menu/recipe mutations.
+  if (party.timeline_dirty) {
+    try {
+      await syncPartyTimeline(partyId, { mode: "structural" });
+    } catch {
+      // Banner still reflects dirty state if sync fails.
+    }
+    const refreshed = await supabase
+      .from("parties")
+      .select(PARTY_FIELDS)
+      .eq("id", partyId)
+      .maybeSingle();
+    if (refreshed.data) party = refreshed.data;
   }
-  const workload = [...workloadMap.entries()].map(([name, count]) => ({ name, count }));
+
+  // Collapse leftovers and drop bars for recipes no longer on the menu.
+  {
+    const [{ data: recipeTasks }, { data: menu }] = await Promise.all([
+      supabase
+        .from("tasks")
+        .select("id, recipe_id, task, step_id, title")
+        .eq("party_id", partyId)
+        .not("recipe_id", "is", null),
+      supabase.from("menu_items").select("recipe_id").eq("party_id", partyId),
+    ]);
+    const menuRecipeIds = new Set((menu ?? []).map((item) => item.recipe_id));
+    let expectedTasks = 0;
+    if (menuRecipeIds.size) {
+      const { data: steps } = await supabase
+        .from("recipe_steps")
+        .select("recipe_id, task")
+        .in("recipe_id", [...menuRecipeIds]);
+      expectedTasks = new Set(
+        (steps ?? []).map((row) => `${row.recipe_id}::${row.task?.trim() || "Cooking"}`),
+      ).size;
+    }
+    const hasOffMenu = (recipeTasks ?? []).some(
+      (task) => !task.recipe_id || !menuRecipeIds.has(task.recipe_id),
+    );
+    const hasStepLeftovers = (recipeTasks ?? []).some((task) => Boolean(task.step_id));
+    const tooManyBars = (recipeTasks ?? []).length > expectedTasks;
+    if (hasOffMenu || hasStepLeftovers || tooManyBars) {
+      try {
+        await syncPartyTimeline(partyId, { mode: "structural" });
+      } catch {
+        // Fall through; banner / empty state still usable.
+      }
+      const refreshed = await supabase
+        .from("parties")
+        .select(PARTY_FIELDS)
+        .eq("id", partyId)
+        .maybeSingle();
+      if (refreshed.data) party = refreshed.data;
+    }
+  }
+
+  const showSyncBanner = Boolean(party.timeline_dirty);
+
+  const [{ data: tasks }, { data: helperRows }, { data: menuItems }] = await Promise.all([
+    supabase
+      .from("tasks")
+      .select(
+        `
+      id,
+      title,
+      description,
+      task,
+      start_at,
+      duration_minutes,
+      status,
+      difficulty,
+      assigned_name,
+      helper_id,
+      locked,
+      recipe_id,
+      sort_order,
+      recipes ( title )
+    `,
+      )
+      .eq("party_id", partyId)
+      .order("sort_order"),
+    supabase
+      .from("party_helpers")
+      .select("id, name, color, sort_order")
+      .eq("party_id", partyId)
+      .order("sort_order"),
+    supabase.from("menu_items").select("recipe_id").eq("party_id", partyId),
+  ]);
+
+  type RecipeStepRow = {
+    id: string;
+    recipe_id: string;
+    title: string;
+    description: string | null;
+    duration_minutes: number | null;
+    task: string | null;
+    sort_order: number;
+  };
+
+  const recipeIds = [...new Set((menuItems ?? []).map((item) => item.recipe_id))];
+  const { data: stepRows } = recipeIds.length
+    ? await supabase
+        .from("recipe_steps")
+        .select("id, recipe_id, title, description, duration_minutes, task, sort_order")
+        .in("recipe_id", recipeIds)
+        .order("sort_order")
+    : { data: [] as RecipeStepRow[] };
+
+  const stepsByTask = new Map<string, RecipeStepRow[]>();
+  for (const step of stepRows ?? []) {
+    const taskName = step.task?.trim() || "Cooking";
+    const key = `${step.recipe_id}::${taskName}`;
+    const list = stepsByTask.get(key) ?? [];
+    list.push(step);
+    stepsByTask.set(key, list);
+  }
+
+  const list: TimelineTask[] = (tasks ?? []).map((row) => {
+    const recipe = Array.isArray(row.recipes) ? row.recipes[0] : row.recipes;
+    const taskName = row.task?.trim() || row.title?.trim() || "Cooking";
+    const key = row.recipe_id ? `${row.recipe_id}::${taskName}` : null;
+    const steps = key
+      ? (stepsByTask.get(key) ?? []).map((step) => ({
+          id: step.id,
+          title: step.title,
+          description: step.description,
+          duration_minutes: step.duration_minutes,
+        }))
+      : [];
+
+    return {
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      start_at: row.start_at,
+      duration_minutes: row.duration_minutes,
+      status: row.status,
+      difficulty: row.difficulty,
+      assigned_name: row.assigned_name,
+      helper_id: row.helper_id,
+      locked: row.locked,
+      recipe_id: row.recipe_id,
+      recipe_title: recipe?.title ?? null,
+      task: taskName,
+      sort_order: row.sort_order,
+      steps,
+    };
+  });
+
+  const helpers: TimelineHelper[] = (helperRows ?? []).map((helper) => ({
+    id: helper.id,
+    name: helper.name,
+    color: helper.color,
+    sort_order: helper.sort_order,
+  }));
+
+  const doneCount = list.filter((task) => task.status === "done").length;
+  const unassignedCount = list.filter((task) => !task.helper_id).length;
+  const next = list
+    .filter((task) => task.status !== "done" && task.start_at)
+    .sort((a, b) => Date.parse(a.start_at!) - Date.parse(b.start_at!))[0];
+
+  const { date, time } = formatPartyWhen(party.starts_at, party.timezone);
+  const prepStartsAt = party.prep_starts_at;
 
   return (
-    <div className="space-y-8">
-      <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+    <div className="space-y-4">
+      {showSyncBanner ? <TimelineSyncBanner partyId={partyId} /> : null}
+
+      <section className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <h2 className="font-editorial text-5xl font-semibold">Order of Operations</h2>
+          <h2 className="font-editorial text-4xl font-semibold md:text-5xl">Order of Operations</h2>
+          <p className="mt-2 text-sm text-ink/50">
+            Helpers run down the side. Recipe tasks move across a fixed 12-hour service window.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-y border-ink/10 py-2 text-xs text-ink/55 md:border-y-0 md:py-0">
+          <span><strong className="text-ink">{doneCount}/{list.length}</strong> done</span>
+          <span><strong className="text-ink">{unassignedCount}</strong> unassigned</span>
+          <span><strong className="text-ink">{time}</strong> · {date}</span>
+          <span className="max-w-[220px] truncate">
+            Next: <strong className="text-ink">{next?.title ?? "All clear"}</strong>
+          </span>
         </div>
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <article className="card p-5">
-          <p className="eyebrow">Progress</p>
-          <p className="mt-3 font-editorial text-4xl font-semibold">
-            {complete}/{list.length}
-          </p>
-          <p className="mt-2 text-xs text-ink/45">tasks complete</p>
-        </article>
-        <article className="card p-5">
-          <p className="eyebrow">Next checkpoint</p>
-          <p className="mt-3 font-editorial text-3xl font-semibold">
-            {next ? formatTaskWhen(next.start_at, party.timezone) : "All clear"}
-          </p>
-          <p className="mt-2 text-xs text-ink/45">{next?.title || "No open tasks"}</p>
-        </article>
-        <article className="card p-5">
-          <p className="eyebrow">Locked tasks</p>
-          <p className="mt-3 font-editorial text-3xl font-semibold">
-            {list.filter((task) => task.locked).length}
-          </p>
-          <p className="mt-2 text-xs text-ink/45">fixed assignments</p>
-        </article>
-        <article className="rounded-[1.75rem] bg-orange p-5 text-paper">
-          <p className="eyebrow !text-paper/55">Party starts</p>
-          <p className="mt-3 font-editorial text-3xl font-semibold">{time}</p>
-          <p className="mt-2 text-xs text-paper/65">{date}</p>
-        </article>
-      </section>
-
-      <section className="grid gap-6 lg:grid-cols-[1fr_290px]">
-        <div className="relative">
-          <div className="absolute bottom-6 left-[26px] top-6 w-px bg-ink/15" />
-          <div className="space-y-4">
-            {list.length === 0 ? (
-              <article className="relative ml-14 rounded-[1.5rem] border border-ink/10 bg-[#f8f2e8] p-5 shadow-card">
-                <p className="font-editorial text-2xl font-semibold">No timeline tasks yet.</p>
-                <p className="mt-2 text-sm text-ink/50">Tasks will show up here once the party plan is generated.</p>
-              </article>
-            ) : null}
-            {list.map((task) => {
-              const done = task.status === "done";
-              return (
-                <article
-                  key={task.id}
-                  className={`relative ml-14 rounded-[1.5rem] border p-5 transition ${done ? "border-olive/20 bg-olive/7" : "border-ink/10 bg-[#f8f2e8] shadow-card"}`}
-                >
-                  <TaskDoneToggle taskId={task.id} partyId={partyId} done={done} title={task.title} />
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-xs font-bold uppercase tracking-wider text-tomato">
-                          {formatTaskWhen(task.start_at, party.timezone)}
-                        </span>
-                        {task.locked ? (
-                          <span className="chip">
-                            <Lock size={12} /> locked
-                          </span>
-                        ) : null}
-                      </div>
-                      <h3 className={`mt-3 font-editorial text-2xl font-semibold ${done ? "text-ink/48 line-through" : ""}`}>
-                        {task.title}
-                      </h3>
-                      <p className="mt-2 text-sm text-ink/50">{task.description || "No notes"}</p>
-                    </div>
-                    <div className="flex shrink-0 flex-wrap gap-2">
-                      <span className="chip">
-                        <UserRound size={13} /> {task.assigned_name || "Unassigned"}
-                      </span>
-                      {task.difficulty ? <span className="chip">{task.difficulty}</span> : null}
-                      <TaskLockToggle taskId={task.id} partyId={partyId} locked={task.locked} />
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </div>
-        <aside className="space-y-4">
-          <article className="card p-5">
-            <p className="eyebrow">Workload</p>
-            <h3 className="mt-2 font-editorial text-3xl font-semibold">
-              {workload.length || 0} cook{workload.length === 1 ? "" : "s"}
-            </h3>
-            <div className="mt-5 space-y-4">
-              {workload.length === 0 ? <p className="text-xs text-ink/45">No assignments yet.</p> : null}
-              {workload.map((person, i) => (
-                <div key={person.name}>
-                  <div className="flex items-center justify-between text-xs font-semibold">
-                    <span>{person.name}</span>
-                    <span>{person.count} tasks</span>
-                  </div>
-                  <div className="mt-2 h-2 rounded-full bg-ink/10">
-                    <div
-                      className={`h-full rounded-full ${i === 0 ? "bg-tomato" : i === 1 ? "bg-orange" : "bg-olive"}`}
-                      style={{ width: `${Math.min(100, person.count * 24)}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </article>
-          <article className="rounded-[1.75rem] bg-ink p-5 text-paper">
-            <Clock3 className="text-orange" size={21} />
-            <h3 className="mt-5 font-editorial text-3xl font-semibold">Live check-ins</h3>
-            <p className="mt-3 text-sm leading-relaxed text-paper/60">
-              On party day, plated. asks whether critical tasks actually happened and shifts dependent work when needed.
-            </p>
-          </article>
-        </aside>
-      </section>
+      <TimelineBoard
+        partyId={partyId}
+        timeZone={party.timezone}
+        tasks={list}
+        helpers={helpers}
+        prepStartsAt={prepStartsAt}
+        partyStartsAt={party.starts_at}
+        partyEndsAt={party.ends_at}
+      />
     </div>
   );
 }

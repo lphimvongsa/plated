@@ -241,3 +241,17 @@ img {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* StPageFlip / react-pageflip page chrome */
+.cookbook-flipbook {
+  box-shadow: 0 18px 50px rgba(41, 35, 31, 0.18);
+}
+
+.cookbook-flipbook .book-page {
+  background-color: #f7f2e8;
+}
+
+.cookbook-flipbook .stf__parent,
+.cookbook-flipbook .stf__wrapper {
+  margin-inline: auto;
+}

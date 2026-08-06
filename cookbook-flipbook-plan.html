@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Virtual Cookbook Flipbook — Implementation Plan</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #1a1f24;
+      --surface: #232a31;
+      --surface-2: #2c353e;
+      --ink: #e8eef2;
+      --muted: #9aa8b4;
+      --line: #3a4652;
+      --accent: #e07a45;
+      --accent-dim: #c45f2e;
+      --ok: #6bbf8a;
+      --warn: #e0b050;
+      --bad: #e07070;
+      --info: #6aa8d8;
+      --radius: 10px;
+      --font-display: "Fraunces", Georgia, serif;
+      --font-body: "IBM Plex Sans", system-ui, sans-serif;
+      --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+      --max: 920px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: var(--font-body);
+      background:
+        radial-gradient(ellipse 80% 50% at 10% -10%, #2a3540 0%, transparent 55%),
+        radial-gradient(ellipse 60% 40% at 100% 0%, #3a2820 0%, transparent 45%),
+        var(--bg);
+      color: var(--ink);
+      line-height: 1.55;
+      font-size: 15.5px;
+    }
+
+    a { color: var(--accent); }
+    a:focus-visible, button:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .wrap { max-width: var(--max); margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+
+    header.doc-head {
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 1.75rem;
+      margin-bottom: 2rem;
+    }
+    .meta {
+      display: flex; flex-wrap: wrap; gap: 0.5rem 1rem;
+      font-size: 0.8rem; color: var(--muted);
+      font-family: var(--font-mono);
+      margin-bottom: 1rem;
+    }
+    .badge {
+      display: inline-flex; align-items: center; gap: 0.35rem;
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--ink);
+    }
+    .badge.ok { border-color: #3d6a4e; color: var(--ok); }
+    .badge.warn { border-color: #6a5a30; color: var(--warn); }
+
+    h1 {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: clamp(1.9rem, 4vw, 2.6rem);
+      line-height: 1.15;
+      margin: 0 0 0.75rem;
+      letter-spacing: -0.02em;
+    }
+    .lede { font-size: 1.05rem; color: var(--muted); max-width: 42rem; margin: 0; }
+
+    nav.toc {
+      position: sticky; top: 0; z-index: 20;
+      background: color-mix(in srgb, var(--bg) 88%, transparent);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+      margin: 0 -1.25rem 2rem;
+      padding: 0.65rem 1.25rem;
+      overflow-x: auto;
+    }
+    nav.toc ul {
+      list-style: none; margin: 0; padding: 0;
+      display: flex; gap: 0.35rem; min-width: max-content;
+    }
+    nav.toc a {
+      display: block;
+      padding: 0.35rem 0.7rem;
+      border-radius: 6px;
+      text-decoration: none;
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-weight: 500;
+    }
+    nav.toc a:hover { background: var(--surface); color: var(--ink); }
+
+    section { margin-bottom: 2.75rem; }
+    h2 {
+      font-family: var(--font-display);
+      font-size: 1.45rem;
+      font-weight: 700;
+      margin: 0 0 0.85rem;
+      letter-spacing: -0.015em;
+    }
+    h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin: 1.4rem 0 0.5rem;
+      color: var(--ink);
+    }
+    p { margin: 0 0 0.9rem; color: color-mix(in srgb, var(--ink) 88%, var(--muted)); }
+    ul, ol { margin: 0 0 1rem; padding-left: 1.25rem; color: color-mix(in srgb, var(--ink) 88%, var(--muted)); }
+    li { margin-bottom: 0.35rem; }
+    strong { color: var(--ink); font-weight: 600; }
+
+    .verdict {
+      background: linear-gradient(135deg, #2a3830, var(--surface));
+      border: 1px solid #3d6a4e;
+      border-radius: var(--radius);
+      padding: 1.15rem 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+    .verdict p { margin: 0; color: var(--ink); }
+    .verdict .label {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--ok);
+      margin-bottom: 0.4rem;
+    }
+
+    .callout {
+      border-radius: var(--radius);
+      border: 1px solid var(--line);
+      background: var(--surface);
+      padding: 1rem 1.15rem;
+      margin: 1rem 0;
+    }
+    .callout.warn { border-color: #6a5a30; background: #2a2618; }
+    .callout.info { border-color: #3a5570; background: #1e2834; }
+    .callout .t {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.35rem;
+    }
+    .callout.warn .t { color: var(--warn); }
+    .callout.info .t { color: var(--info); }
+    .callout p:last-child { margin-bottom: 0; }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.85rem;
+    }
+    @media (max-width: 760px) {
+      .grid-3 { grid-template-columns: 1fr; }
+      .grid-2 { grid-template-columns: 1fr !important; }
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 1rem 1.05rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .card.recommended {
+      border-color: #3d6a4e;
+      box-shadow: 0 0 0 1px #3d6a4e inset;
+    }
+    .card h3 { margin: 0; font-size: 1.02rem; }
+    .card .tag {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--muted);
+    }
+    .card.recommended .tag { color: var(--ok); }
+    .pros, .cons { margin: 0; padding-left: 1.1rem; font-size: 0.88rem; }
+    .pros { color: var(--ok); }
+    .cons { color: var(--bad); }
+    .best {
+      margin-top: auto;
+      padding-top: 0.5rem;
+      font-size: 0.82rem;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.85rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      margin: 0.75rem 0 1.25rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 0.55rem 0.65rem;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    th {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    code, .mono {
+      font-family: var(--font-mono);
+      font-size: 0.84em;
+    }
+    pre {
+      background: #12161a;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0.9rem 1rem;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      line-height: 1.5;
+      color: #c8d4de;
+      margin: 0.75rem 0 1.1rem;
+    }
+
+    .phase {
+      border-left: 3px solid var(--accent);
+      padding: 0.15rem 0 0.15rem 1rem;
+      margin: 0 0 1.35rem;
+    }
+    .phase .n {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--accent);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .phase h3 { margin-top: 0.15rem; }
+
+    .mock {
+      background: var(--surface-2);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      margin: 1rem 0;
+    }
+    .book-stage {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 0;
+      perspective: 1200px;
+      min-height: 220px;
+      padding: 1rem 0.5rem;
+    }
+    .page {
+      width: min(38%, 160px);
+      aspect-ratio: 3 / 4;
+      background: #f3eee4;
+      color: #2a241f;
+      padding: 0.7rem;
+      font-size: 0.58rem;
+      line-height: 1.35;
+      box-shadow: 0 12px 28px rgba(0,0,0,0.35);
+      position: relative;
+    }
+    .page.left {
+      border-radius: 3px 0 0 3px;
+      background: linear-gradient(90deg, #e8e0d4, #f3eee4 12%);
+    }
+    .page.right {
+      border-radius: 0 3px 3px 0;
+      background: linear-gradient(270deg, #e8e0d4, #f3eee4 12%);
+    }
+    .page .ph {
+      font-family: var(--font-display);
+      font-size: 0.85rem;
+      font-weight: 700;
+      margin-bottom: 0.35rem;
+    }
+    .page .img {
+      height: 42%;
+      background: linear-gradient(145deg, #4a5a48, #2a3530);
+      border-radius: 2px;
+      margin: 0.4rem 0;
+    }
+    .flip-overlay {
+      position: absolute;
+      right: -2px; top: 0;
+      width: 55%;
+      height: 100%;
+      background: linear-gradient(135deg, transparent 40%, #d8cfc0 40%, #c4b8a4 70%, #b8ae9c);
+      clip-path: polygon(45% 0, 100% 0, 100% 100%, 0 100%);
+      transform-origin: left center;
+      transform: rotateY(-28deg) skewY(-4deg);
+      box-shadow: -8px 0 20px rgba(0,0,0,0.35);
+      opacity: 0.95;
+      pointer-events: none;
+    }
+    .page.right { overflow: hidden; }
+    .mock-caption {
+      text-align: center;
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-top: 0.5rem;
+    }
+
+    svg.flow { width: 100%; height: auto; margin: 1rem 0; display: block; }
+    .fo {
+      font-family: var(--font-body);
+      font-size: 12px;
+      color: var(--ink);
+      line-height: 1.35;
+      padding: 6px 8px;
+    }
+
+    .q-list { list-style: none; padding: 0; margin: 0; }
+    .q-list li {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0.85rem 1rem;
+      margin-bottom: 0.55rem;
+    }
+    .q-list .q { font-weight: 600; color: var(--ink); margin-bottom: 0.25rem; }
+    .q-list .hint { font-size: 0.85rem; color: var(--muted); margin: 0; }
+
+    footer {
+      border-top: 1px solid var(--line);
+      padding-top: 1.25rem;
+      color: var(--muted);
+      font-size: 0.8rem;
+      font-family: var(--font-mono);
+    }
+
+    @media print {
+      body { background: white; color: #111; }
+      nav.toc { display: none; }
+      .card, .verdict, .callout, .mock, .phase { break-inside: avoid; }
+      a { color: #000; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="doc-head">
+      <div class="meta">
+        <span class="badge ok">Feasible — yes</span>
+        <span class="badge">Plated · Cookbook UX</span>
+        <span class="badge warn">Not in current product specs</span>
+      </div>
+      <h1>Virtual cookbook with page-flip animation</h1>
+      <p class="lede">
+        Plan for making <code>/app/recipes</code> feel like an open book with realistic
+        curl-and-flip motion (matching the reference flipbook). Verdict first, then
+        approach comparison, page model, and a phased build path against the existing
+        cookbook grid + editor.
+      </p>
+    </header>
+
+    <nav class="toc" aria-label="Document sections">
+      <ul>
+        <li><a href="#verdict">Verdict</a></li>
+        <li><a href="#context">Context</a></li>
+        <li><a href="#approaches">Approaches</a></li>
+        <li><a href="#ux">UX model</a></li>
+        <li><a href="#architecture">Architecture</a></li>
+        <li><a href="#plan">Build plan</a></li>
+        <li><a href="#risks">Risks</a></li>
+        <li><a href="#questions">Open questions</a></li>
+      </ul>
+    </nav>
+
+    <section id="verdict">
+      <h2>1. Verdict</h2>
+      <div class="verdict">
+        <div class="label">Is it possible?</div>
+        <p>
+          <strong>Yes.</strong> The reference UI is a well-solved pattern: HTML (or canvas)
+          pages inside a page-flip engine that simulates paper curl, shadows, and drag/click
+          turns. You do <em>not</em> need custom WebGL physics. The realistic path for Plated
+          is <strong>StPageFlip via <code>react-pageflip</code></strong> (or the underlying
+          <code>page-flip</code> package), mounted as a client-only component in the Next.js
+          App Router — same class of effect as the screenshot.
+        </p>
+      </div>
+      <div class="callout info">
+        <div class="t">Fit with today</div>
+        <p>
+          Cookbook is currently a <strong>card grid + full form editor</strong>
+          (<code>(app/app/recipes/page.tsx</code>, <code>RecipeEditor)</code>. Specs
+          (<code>(RECIPE_SYSTEM_SPEC</code>, <code>PRODUCT_SPEC §7)</code> describe grid/list →
+          detail/edit, not a physical book. A flipbook is a <strong>new browse/read surface</strong>,
+          not a replacement for editing. Keep the editor; add a “read as book” (or collection → book)
+          mode.
+        </p>
+      </div>
+    </section>
+
+    <section id="context">
+      <h2>2. Context &amp; constraints</h2>
+      <h3>What already exists</h3>
+      <ul>
+        <li>Cookbook home: hero + mock collections + searchable recipe card grid</li>
+        <li>Detail routes render <code>RecipeEditor</code> (create/edit), not a reading layout</li>
+        <li>No Framer Motion / Three.js / page-flip libs in <code>package.json</code></li>
+        <li>Design language: paper cream, tomato accent, Cormorant + DM Sans — maps well to “printed page” content</li>
+      </ul>
+
+      <h3>Hard constraints</h3>
+      <ul>
+        <li><strong>Next.js 15 App Router + React 19</strong> — flip library must be client-only (<code>dynamic(..., { ssr: false })</code> or <code>"use client"</code> with no SSR DOM access)</li>
+        <li><strong>Mobile</strong> — book must degrade to single-page portrait flips; AppShell bottom nav competes for vertical space</li>
+        <li><strong>Accessibility</strong> — <code>prefers-reduced-motion</code> → instant page changes or fall back to list/grid; keyboard prev/next; don’t trap focus inside flipped canvases</li>
+        <li><strong>Editability</strong> — don’t put the full editor inside flipping pages; link out (“Edit recipe”) to existing routes</li>
+        <li><strong>Performance</strong> — don’t mount 200 full recipe DOMs at once; virtualize or build pages lazily / by collection</li>
+      </ul>
+    </section>
+
+    <section id="approaches">
+      <h2>3. Approach comparison</h2>
+      <div class="grid-3">
+        <article class="card recommended">
+          <div class="tag">Recommended · closest to reference</div>
+          <h3>A. StPageFlip / react-pageflip</h3>
+          <ul class="pros">
+            <li>+ Realistic curl, shadows, corner drag</li>
+            <li>+ HTML pages → real text, images, links</li>
+            <li>+ Landscape + portrait modes built-in</li>
+            <li>+ Hard cover + soft inner pages</li>
+          </ul>
+          <ul class="cons">
+            <li>− Older React wrapper; needs careful refs / dynamic import</li>
+            <li>− Awkward with frequently changing children (need update APIs)</li>
+            <li>− Touch + nested scroll needs tuning</li>
+          </ul>
+          <p class="best"><strong>Best when:</strong> you want the screenshot look with recipe HTML inside pages.</p>
+        </article>
+
+        <article class="card">
+          <div class="tag">DIY · lighter weight</div>
+          <h3>B. CSS 3D page turn</h3>
+          <ul class="pros">
+            <li>+ No dependency; full control</li>
+            <li>+ Easy reduced-motion fallback</li>
+          </ul>
+          <ul class="cons">
+            <li>− Curl physics look flat vs reference</li>
+            <li>− Weeks to match StPageFlip quality</li>
+            <li>− Drag-from-corner is non-trivial</li>
+          </ul>
+          <p class="best"><strong>Best when:</strong> you only want a stylized half-turn, not catalog-grade realism.</p>
+        </article>
+
+        <article class="card">
+          <div class="tag">Overkill for recipes</div>
+          <h3>C. Three.js / WebGL book</h3>
+          <ul class="pros">
+            <li>+ Maximum visual fidelity</li>
+          </ul>
+          <ul class="cons">
+            <li>− Heavy bundle; text/selectivity hard</li>
+            <li>− Editing/links/a11y painful</li>
+            <li>− Wrong tool for recipe content</li>
+          </ul>
+          <p class="best"><strong>Best when:</strong> marketing hero only — not the real cookbook.</p>
+        </article>
+      </div>
+
+      <div class="callout warn">
+        <div class="t">Skip for this product</div>
+        <p>
+          Pure image/PDF flipbooks (render each page to a bitmap) look great but kill text selection,
+          deep links, and “Edit” CTAs. Plated recipes are structured HTML data — keep pages as DOM.
+        </p>
+      </div>
+    </section>
+
+    <section id="ux">
+      <h2>4. UX model (how it should feel)</h2>
+
+      <div class="mock" aria-hidden="true">
+        <div class="book-stage">
+          <div class="page left">
+            <div class="ph">Lemon risotto</div>
+            <div class="img"></div>
+            <div>Serves 6 · 45 min · Mains</div>
+            <div style="margin-top:0.4rem;opacity:0.7">A bright, make-ahead-friendly party staple…</div>
+          </div>
+          <div class="page right">
+            <div class="ph">Ingredients</div>
+            <div>• Arborio rice — 400g</div>
+            <div>• Lemon — 2</div>
+            <div>• Parmesan — 80g</div>
+            <div style="margin-top:0.5rem" class="ph">Steps</div>
+            <div>1. Warm stock…</div>
+            <div>2. Toast rice…</div>
+            <div class="flip-overlay"></div>
+          </div>
+        </div>
+        <p class="mock-caption">Target: open spread · left = cover/photo · right = content · mid-flip curl</p>
+      </div>
+
+      <h3>Recommended product shape</h3>
+      <ol>
+        <li><strong>Keep</strong> the cookbook grid as the default index (search/filter still work).</li>
+        <li><strong>Add</strong> “Open as book” on the cookbook home and/or on a collection.</li>
+        <li>Book opens fullscreen (or max-width stage inside AppShell) with prev/next, page count, close.</li>
+        <li>Each recipe spans <strong>1–2 spreads</strong> (photo + meta | ingredients + steps). Long recipes continue on following pages.</li>
+        <li>Cover + TOC at the front; optional blank/endpaper pages for even page count.</li>
+        <li>Tap “Edit” on a recipe page → existing <code>/app/recipes/[id]</code>.</li>
+        <li>Mobile: single-page portrait mode (library supports this); consider hiding bottom nav while book is open.</li>
+      </ol>
+
+      <table>
+        <thead>
+          <tr><th>Surface</th><th>Role</th><th>Flipbook?</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>/app/recipes</code></td>
+            <td>Index, search, collections</td>
+            <td>Entry CTA only</td>
+          </tr>
+          <tr>
+            <td><code>/app/recipes/book</code> or modal</td>
+            <td>Reading experience</td>
+            <td>Yes — primary</td>
+          </tr>
+          <tr>
+            <td><code>/app/recipes/[id]</code></td>
+            <td>Edit / full form</td>
+            <td>No</td>
+          </tr>
+          <tr>
+            <td>Party recipes tab</td>
+            <td>Event-scoped list</td>
+            <td>Optional later</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="architecture">
+      <h2>5. Architecture</h2>
+
+      <svg class="flow" viewBox="0 0 880 220" role="img" aria-label="Data flow from recipes to flipbook pages">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#9aa8b4" />
+          </marker>
+        </defs>
+        <rect x="20" y="60" width="150" height="70" rx="8" fill="#2c353e" stroke="#3a4652" />
+        <foreignObject x="28" y="70" width="134" height="50"><div class="fo" xmlns="http://www.w3.org/1999/xhtml"><strong>Supabase</strong><br/>recipes + ingredients + tasks</div></foreignObject>
+
+        <line x1="170" y1="95" x2="230" y2="95" stroke="#9aa8b4" stroke-width="1.5" marker-end="url(#arrow)" />
+
+        <rect x="230" y="60" width="160" height="70" rx="8" fill="#2c353e" stroke="#3a4652" />
+        <foreignObject x="238" y="70" width="144" height="50"><div class="fo" xmlns="http://www.w3.org/1999/xhtml"><strong>paginateRecipes()</strong><br/>server or client util → PageModel[]</div></foreignObject>
+
+        <line x1="390" y1="95" x2="450" y2="95" stroke="#9aa8b4" stroke-width="1.5" marker-end="url(#arrow)" />
+
+        <rect x="450" y="40" width="170" height="110" rx="8" fill="#2c353e" stroke="#e07a45" />
+        <foreignObject x="458" y="52" width="154" height="90"><div class="fo" xmlns="http://www.w3.org/1999/xhtml"><strong>CookbookBook</strong><br/>client-only<br/>dynamic import<br/>HTMLFlipBook children</div></foreignObject>
+
+        <line x1="620" y1="95" x2="680" y2="95" stroke="#9aa8b4" stroke-width="1.5" marker-end="url(#arrow)" />
+
+        <rect x="680" y="50" width="170" height="90" rx="8" fill="#2c353e" stroke="#3a4652" />
+        <foreignObject x="688" y="62" width="154" height="70"><div class="fo" xmlns="http://www.w3.org/1999/xhtml"><strong>Page components</strong><br/>Cover · Toc · RecipeSpread · Endpaper</div></foreignObject>
+      </svg>
+
+      <h3>Page model (suggested)</h3>
+<pre><code>type BookPage =
+  | { kind: "cover"; title: string; subtitle?: string; imageUrl?: string }
+  | { kind: "toc"; entries: { title: string; pageIndex: number }[] }
+  | { kind: "recipe-hero"; recipeId: string; title: string; imageUrl?: string; meta: RecipeMeta }
+  | { kind: "recipe-body"; recipeId: string; ingredients: Ingredient[]; steps: Step[] }
+  | { kind: "recipe-notes"; recipeId: string; notes: string }
+  | { kind: "blank" };</code></pre>
+
+      <h3>Files to add (proposed)</h3>
+      <table>
+        <thead>
+          <tr><th>File</th><th>Responsibility</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>components/recipe/cookbook-book.tsx</code></td>
+            <td>Client wrapper: size, flip controls, reduced-motion, refs</td>
+          </tr>
+          <tr>
+            <td><code>components/recipe/book-pages/*.tsx</code></td>
+            <td>Presentational page layouts (paper styling)</td>
+          </tr>
+          <tr>
+            <td><code>lib/recipes/paginate-book.ts</code></td>
+            <td>Pure function: recipes → ordered <code>BookPage[]</code></td>
+          </tr>
+          <tr>
+            <td><code>app/app/recipes/book/page.tsx</code></td>
+            <td>Server fetch + mount book (or modal from cookbook page)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Next.js integration sketch</h3>
+<pre><code>// cookbook-book.tsx — "use client"
+import dynamic from "next/dynamic";
+
+const HTMLFlipBook = dynamic(() => import("react-pageflip"), { ssr: false });
+
+export function CookbookBook({ pages }: { pages: BookPage[] }) {
+  // measure container → width/height
+  // useRef for flipNext / flipPrev
+  // listen onFlip → sync "6 of 12" UI
+  return (
+    &lt;HTMLFlipBook width={w} height={h} showCover drawShadow
+      mobileScrollSupport usePortrait&gt;
+      {pages.map((p, i) =&gt; (
+        &lt;div key={i} className="book-page" data-density={i === 0 ? "hard" : "soft"}&gt;
+          &lt;BookPageView page={p} /&gt;
+        &lt;/div&gt;
+      ))}
+    &lt;/HTMLFlipBook&gt;
+  );
+}</code></pre>
+    </section>
+
+    <section id="plan">
+      <h2>6. Implementation plan</h2>
+
+      <div class="phase">
+        <div class="n">Phase 0 · Spike (½–1 day)</div>
+        <h3>Prove the effect in-app</h3>
+        <ul>
+          <li>Install <code>react-pageflip</code> (pulls StPageFlip / page-flip)</li>
+          <li>Throwaway route or story with 6 static HTML pages + hard cover</li>
+          <li>Validate: drag flip, buttons, mobile portrait, AppShell chrome collision</li>
+          <li>Kill criteria: if React 19 / SSR friction is too high, fall back to raw <code>page-flip</code> on a ref</li>
+        </ul>
+      </div>
+
+      <div class="phase">
+        <div class="n">Phase 1 · Page system (1–2 days)</div>
+        <h3>Design the paper pages</h3>
+        <ul>
+          <li>Build Cover / TOC / Recipe hero / Ingredients+steps page components in Plated tokens (paper bg, editorial type)</li>
+          <li>Implement <code>paginateRecipes()</code> with simple rules (hero left, body right; overflow → extra pages)</li>
+          <li>Pad with blank pages so the book closes cleanly; mark first/last as hard covers</li>
+        </ul>
+      </div>
+
+      <div class="phase">
+        <div class="n">Phase 2 · Wire real data (1 day)</div>
+        <h3>Connect to cookbook recipes</h3>
+        <ul>
+          <li>Server page loads owner cookbook recipes (+ ingredients/tasks as needed)</li>
+          <li>“Open as book” CTA from <code>/app/recipes</code></li>
+          <li>Page indicator, keyboard ←/→, click edges, Escape to close</li>
+          <li>Deep link: <code>?page=</code> or <code>?recipe=</code> → <code>turnToPage</code></li>
+        </ul>
+      </div>
+
+      <div class="phase">
+        <div class="n">Phase 3 · Product polish (1–2 days)</div>
+        <h3>Make it feel intentional</h3>
+        <ul>
+          <li>Collection-scoped books once collections are real (today they’re mock)</li>
+          <li><code>prefers-reduced-motion</code>: disable animation / offer list fallback</li>
+          <li>Cap book size (e.g. first N recipes or active filter/collection only)</li>
+          <li>Optional soft ambient shadow under the open spread (CSS, not WebGL)</li>
+          <li>Don’t block “Edit” / import flows — book is additive</li>
+        </ul>
+      </div>
+
+      <div class="phase">
+        <div class="n">Phase 4 · Optional later</div>
+        <h3>Nice-to-haves</h3>
+        <ul>
+          <li>Search inside book → jump to page</li>
+          <li>Party menu as a mini event booklet</li>
+          <li>Print stylesheet that dumps pages linearly</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="risks">
+      <h2>7. Risks &amp; mitigations</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Library / React 19 friction</h3>
+          <p>Wrapper may be stale. Mitigate with <code>dynamic(ssr:false)</code>, or use <code>page-flip</code> directly on a DOM ref.</p>
+        </div>
+        <div class="card">
+          <h3>Long recipes / many recipes</h3>
+          <p>Pagination + collection scope. Avoid rendering entire cookbook DOM at once if &gt;~40 recipes.</p>
+        </div>
+        <div class="card">
+          <h3>Touch vs scroll</h3>
+          <p>StPageFlip has <code>mobileScrollSupport</code>; keep page content short enough that inner scroll is rare.</p>
+        </div>
+        <div class="card">
+          <h3>A11y / SEO</h3>
+          <p>Book is a progressive enhancement of browsing; keep grid + editor as primary accessible paths.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="questions">
+      <h2>8. Open questions (decide before building past the spike)</h2>
+      <ul class="q-list">
+        <li>
+          <div class="q">Is the book the default cookbook view, or an optional mode?</div>
+          <p class="hint">Recommendation: optional (“Open as book”) so search/filter stay first-class.</p>
+        </li>
+        <li>
+          <div class="q">Does a book contain all recipes, or one collection at a time?</div>
+          <p class="hint">Collection-at-a-time scales better and matches the “physical cookbook” metaphor.</p>
+        </li>
+        <li>
+          <div class="q">Fullscreen overlay vs dedicated route?</div>
+          <p class="hint">Dedicated <code>/app/recipes/book</code> is simpler for SSR fetch + shareable URLs; overlay feels more magical.</p>
+        </li>
+        <li>
+          <div class="q">Should party recipes get the same treatment?</div>
+          <p class="hint">Defer — prove it on global cookbook first.</p>
+        </li>
+      </ul>
+
+      <h3>Out of scope for v1</h3>
+      <ul>
+        <li>Editing ingredients/steps inside flipping pages</li>
+        <li>True 3D WebGL book mesh</li>
+        <li>PDF export that preserves curl animation</li>
+        <li>Replacing RecipeEditor</li>
+      </ul>
+    </section>
+
+    <footer>
+      <p>Last updated: 2026-08-06 · cookbook-flipbook-plan.html · for Plated</p>
+      <p>Hand this file to an implementation session with: “Implement Phase 0–2 from cookbook-flipbook-plan.html”.</p>
+    </footer>
+  </div>
+</body>
+</html>

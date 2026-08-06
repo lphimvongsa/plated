@@ -16,6 +16,7 @@ export type Database = {
           email: string | null;
           avatar_url: string | null;
           preferred_measurement: string;
+          preferred_dimension: string;
           timezone: string;
           cooking_skill_level: string;
           specialties: string[];
@@ -29,6 +30,7 @@ export type Database = {
           email?: string | null;
           avatar_url?: string | null;
           preferred_measurement?: string;
+          preferred_dimension?: string;
           timezone?: string;
           cooking_skill_level?: string;
           specialties?: string[];
@@ -39,6 +41,7 @@ export type Database = {
           email?: string | null;
           avatar_url?: string | null;
           preferred_measurement?: string;
+          preferred_dimension?: string;
           timezone?: string;
           cooking_skill_level?: string;
           specialties?: string[];
@@ -54,6 +57,7 @@ export type Database = {
           description: string | null;
           starts_at: string;
           ends_at: string | null;
+          prep_starts_at: string | null;
           location: string | null;
           timezone: string;
           theme: string | null;
@@ -63,6 +67,8 @@ export type Database = {
           guest_contribution_notes: string | null;
           hero_image: string | null;
           planning_guest_count: number;
+          shopping_dirty: boolean;
+          timeline_dirty: boolean;
           status: string;
           created_at: string;
           updated_at: string;
@@ -74,6 +80,7 @@ export type Database = {
           description?: string | null;
           starts_at: string;
           ends_at?: string | null;
+          prep_starts_at?: string | null;
           location?: string | null;
           timezone?: string;
           theme?: string | null;
@@ -83,6 +90,8 @@ export type Database = {
           guest_contribution_notes?: string | null;
           hero_image?: string | null;
           planning_guest_count?: number;
+          shopping_dirty?: boolean;
+          timeline_dirty?: boolean;
           status?: string;
         };
         Update: {
@@ -90,6 +99,7 @@ export type Database = {
           description?: string | null;
           starts_at?: string;
           ends_at?: string | null;
+          prep_starts_at?: string | null;
           location?: string | null;
           timezone?: string;
           theme?: string | null;
@@ -99,7 +109,35 @@ export type Database = {
           guest_contribution_notes?: string | null;
           hero_image?: string | null;
           planning_guest_count?: number;
+          shopping_dirty?: boolean;
+          timeline_dirty?: boolean;
           status?: string;
+        };
+        Relationships: [];
+      };
+      party_helpers: {
+        Row: {
+          id: string;
+          party_id: string;
+          user_id: string | null;
+          name: string;
+          color: string;
+          sort_order: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          party_id: string;
+          user_id?: string | null;
+          name: string;
+          color?: string;
+          sort_order?: number;
+        };
+        Update: {
+          user_id?: string | null;
+          name?: string;
+          color?: string;
+          sort_order?: number;
         };
         Relationships: [];
       };
@@ -131,6 +169,7 @@ export type Database = {
           id: string;
           owner_id: string;
           party_id: string | null;
+          cookbook_recipe_id: string | null;
           title: string;
           description: string | null;
           image_url: string | null;
@@ -138,13 +177,22 @@ export type Database = {
           servings: number;
           prep_minutes: number | null;
           cook_minutes: number | null;
+          total_minutes: number | null;
           course: string | null;
           cuisine: string | null;
+          difficulty: string | null;
           tags: string[];
+          dietary_tags: string[];
+          allergy_tags: string[];
           instructions: string | null;
           equipment: string[];
           notes: string | null;
           allergy_notes: string | null;
+          make_ahead_notes: string | null;
+          storage_notes: string | null;
+          reheating_notes: string | null;
+          import_status: string;
+          import_source_type: string | null;
           estimated_cost: number | null;
           status: string;
           created_at: string;
@@ -154,6 +202,7 @@ export type Database = {
           id?: string;
           owner_id: string;
           party_id?: string | null;
+          cookbook_recipe_id?: string | null;
           title: string;
           description?: string | null;
           image_url?: string | null;
@@ -161,13 +210,22 @@ export type Database = {
           servings?: number;
           prep_minutes?: number | null;
           cook_minutes?: number | null;
+          total_minutes?: number | null;
           course?: string | null;
           cuisine?: string | null;
+          difficulty?: string | null;
           tags?: string[];
+          dietary_tags?: string[];
+          allergy_tags?: string[];
           instructions?: string | null;
           equipment?: string[];
           notes?: string | null;
           allergy_notes?: string | null;
+          make_ahead_notes?: string | null;
+          storage_notes?: string | null;
+          reheating_notes?: string | null;
+          import_status?: string;
+          import_source_type?: string | null;
           estimated_cost?: number | null;
           status?: string;
         };
@@ -175,14 +233,30 @@ export type Database = {
           title?: string;
           description?: string | null;
           image_url?: string | null;
+          source_url?: string | null;
           servings?: number;
           prep_minutes?: number | null;
           cook_minutes?: number | null;
+          total_minutes?: number | null;
           course?: string | null;
+          cuisine?: string | null;
+          difficulty?: string | null;
+          tags?: string[];
+          dietary_tags?: string[];
+          allergy_tags?: string[];
+          instructions?: string | null;
+          equipment?: string[];
+          notes?: string | null;
           allergy_notes?: string | null;
+          make_ahead_notes?: string | null;
+          storage_notes?: string | null;
+          reheating_notes?: string | null;
+          import_status?: string;
+          import_source_type?: string | null;
           estimated_cost?: number | null;
           status?: string;
           party_id?: string | null;
+          cookbook_recipe_id?: string | null;
         };
         Relationships: [];
       };
@@ -193,11 +267,16 @@ export type Database = {
           name: string;
           quantity: number | null;
           unit: string | null;
+          section: string | null;
+          secondary_quantity: number | null;
+          secondary_unit: string | null;
           preparation_note: string | null;
           category: string | null;
           allergen_tags: string[];
           pantry_flag: boolean;
           sort_order: number;
+          estimated_unit_cost: number | null;
+          canonical_key: string | null;
         };
         Insert: {
           id?: string;
@@ -205,21 +284,85 @@ export type Database = {
           name: string;
           quantity?: number | null;
           unit?: string | null;
+          section?: string | null;
+          secondary_quantity?: number | null;
+          secondary_unit?: string | null;
           preparation_note?: string | null;
           category?: string | null;
           allergen_tags?: string[];
           pantry_flag?: boolean;
           sort_order?: number;
+          estimated_unit_cost?: number | null;
+          canonical_key?: string | null;
         };
         Update: {
           name?: string;
           quantity?: number | null;
           unit?: string | null;
+          section?: string | null;
+          secondary_quantity?: number | null;
+          secondary_unit?: string | null;
           preparation_note?: string | null;
           category?: string | null;
           allergen_tags?: string[];
           pantry_flag?: boolean;
           sort_order?: number;
+          estimated_unit_cost?: number | null;
+          canonical_key?: string | null;
+        };
+        Relationships: [];
+      };
+      recipe_steps: {
+        Row: {
+          id: string;
+          recipe_id: string;
+          title: string;
+          description: string | null;
+          duration_minutes: number | null;
+          task: string | null;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          recipe_id: string;
+          title: string;
+          description?: string | null;
+          duration_minutes?: number | null;
+          task?: string | null;
+          sort_order?: number;
+        };
+        Update: {
+          title?: string;
+          description?: string | null;
+          duration_minutes?: number | null;
+          task?: string | null;
+          sort_order?: number;
+        };
+        Relationships: [];
+      };
+      ingredient_prices: {
+        Row: {
+          canonical_key: string;
+          unit: string;
+          price_per_unit: number;
+          currency: string;
+          source: string;
+          updated_at: string;
+        };
+        Insert: {
+          canonical_key: string;
+          unit: string;
+          price_per_unit: number;
+          currency?: string;
+          source?: string;
+        };
+        Update: {
+          unit?: string;
+          price_per_unit?: number;
+          currency?: string;
+          source?: string;
         };
         Relationships: [];
       };
@@ -320,8 +463,12 @@ export type Database = {
           party_id: string;
           ingredient_name: string;
           required_quantity: string | null;
+          quantity: number | null;
           unit: string | null;
           category: string | null;
+          canonical_key: string | null;
+          source_recipe_ids: string[];
+          is_manual: boolean;
           already_owned: boolean;
           purchased: boolean;
           estimated_cost: number | null;
@@ -333,8 +480,12 @@ export type Database = {
           party_id: string;
           ingredient_name: string;
           required_quantity?: string | null;
+          quantity?: number | null;
           unit?: string | null;
           category?: string | null;
+          canonical_key?: string | null;
+          source_recipe_ids?: string[];
+          is_manual?: boolean;
           already_owned?: boolean;
           purchased?: boolean;
           estimated_cost?: number | null;
@@ -344,8 +495,12 @@ export type Database = {
         Update: {
           ingredient_name?: string;
           required_quantity?: string | null;
+          quantity?: number | null;
           unit?: string | null;
           category?: string | null;
+          canonical_key?: string | null;
+          source_recipe_ids?: string[];
+          is_manual?: boolean;
           already_owned?: boolean;
           purchased?: boolean;
           estimated_cost?: number | null;
@@ -358,8 +513,11 @@ export type Database = {
         Row: {
           id: string;
           party_id: string;
+          recipe_id: string | null;
+          step_id: string | null;
           title: string;
           description: string | null;
+          task: string | null;
           start_at: string | null;
           due_at: string | null;
           duration_minutes: number | null;
@@ -367,6 +525,7 @@ export type Database = {
           difficulty: string | null;
           required_specialty: string | null;
           assigned_name: string | null;
+          helper_id: string | null;
           locked: boolean;
           dependency_ids: string[];
           sort_order: number;
@@ -376,8 +535,11 @@ export type Database = {
         Insert: {
           id?: string;
           party_id: string;
+          recipe_id?: string | null;
+          step_id?: string | null;
           title: string;
           description?: string | null;
+          task?: string | null;
           start_at?: string | null;
           due_at?: string | null;
           duration_minutes?: number | null;
@@ -385,18 +547,24 @@ export type Database = {
           difficulty?: string | null;
           required_specialty?: string | null;
           assigned_name?: string | null;
+          helper_id?: string | null;
           locked?: boolean;
           dependency_ids?: string[];
           sort_order?: number;
         };
         Update: {
+          recipe_id?: string | null;
+          step_id?: string | null;
           title?: string;
           description?: string | null;
+          task?: string | null;
           start_at?: string | null;
           due_at?: string | null;
+          duration_minutes?: number | null;
           status?: string;
           difficulty?: string | null;
           assigned_name?: string | null;
+          helper_id?: string | null;
           locked?: boolean;
           sort_order?: number;
         };

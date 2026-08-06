@@ -1,4 +1,6 @@
 import { CostsPanel } from "@/components/party/costs-panel";
+import { regenerateShoppingList } from "@/lib/actions/shopping";
+import { getPartyCostSummary } from "@/lib/party/cost-summary";
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 
@@ -8,35 +10,40 @@ export default async function CostsPage({ params }: { params: Promise<{ partyId:
 
   const { data: party } = await supabase
     .from("parties")
-    .select("id, planning_guest_count")
+    .select("id, shopping_dirty")
     .eq("id", partyId)
     .maybeSingle();
   if (!party) notFound();
 
-  const [{ data: grocery }, { data: recipes }] = await Promise.all([
-    supabase
-      .from("grocery_items")
-      .select("estimated_cost, actual_cost, already_owned")
-      .eq("party_id", partyId),
-    supabase
-      .from("recipes")
-      .select("id, title, image_url, estimated_cost, servings")
-      .eq("party_id", partyId),
+  // Fallback if background refresh has not finished yet.
+  if (party.shopping_dirty) {
+    try {
+      await regenerateShoppingList(partyId);
+    } catch {
+      // Keep reading current grocery snapshot.
+    }
+  }
+
+  const summary = await getPartyCostSummary(supabase, partyId);
+
+  const [{ data: groceryActuals }] = await Promise.all([
+    supabase.from("grocery_items").select("actual_cost").eq("party_id", partyId),
   ]);
 
-  const groceryEstimate = (grocery ?? [])
-    .filter((item) => !item.already_owned)
-    .reduce((sum, item) => sum + (item.estimated_cost ?? 0), 0);
-  const recipeEstimate = (recipes ?? []).reduce((sum, recipe) => sum + (recipe.estimated_cost ?? 0), 0);
-  const estimate = groceryEstimate || recipeEstimate;
-  const actualLogged = (grocery ?? []).reduce((sum, item) => sum + (item.actual_cost ?? 0), 0);
+  const actualLogged = (groceryActuals ?? []).reduce((sum, item) => sum + (item.actual_cost ?? 0), 0);
 
   return (
     <CostsPanel
-      estimate={estimate}
+      estimate={summary.estimatedTotal}
       actualLogged={actualLogged}
-      recipes={recipes ?? []}
-      guestCount={party.planning_guest_count}
+      recipes={summary.dishes.map((dish) => ({
+        id: dish.id,
+        title: dish.title,
+        image_url: dish.image_url,
+        estimated_cost: dish.scaled_cost,
+        servings: dish.servings,
+      }))}
+      guestCount={summary.guestCount}
     />
   );
 }

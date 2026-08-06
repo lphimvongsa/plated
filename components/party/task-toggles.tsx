@@ -9,11 +9,13 @@ export function TaskDoneToggle({
   partyId,
   done,
   title,
+  placement = "rail",
 }: {
   taskId: string;
   partyId: string;
   done: boolean;
   title: string;
+  placement?: "rail" | "inline";
 }) {
   const [pending, startTransition] = useTransition();
 
@@ -21,14 +23,21 @@ export function TaskDoneToggle({
     <button
       type="button"
       disabled={pending}
-      onClick={() =>
+      onClick={(event) => {
+        event.stopPropagation();
         startTransition(async () => {
           await toggleTaskDone(taskId, !done, partyId);
-        })
+        });
+      }}
+      className={
+        placement === "rail"
+          ? `absolute -left-[46px] top-6 z-10 grid h-9 w-9 place-items-center rounded-full border-4 border-paper ${
+              done ? "bg-olive text-paper" : "bg-paper text-ink/35 ring-1 ring-ink/15"
+            }`
+          : `grid h-8 w-8 shrink-0 place-items-center rounded-full ${
+              done ? "bg-olive text-paper" : "bg-paper text-ink/35 ring-1 ring-ink/15"
+            }`
       }
-      className={`absolute -left-[46px] top-6 z-10 grid h-9 w-9 place-items-center rounded-full border-4 border-paper ${
-        done ? "bg-olive text-paper" : "bg-paper text-ink/35 ring-1 ring-ink/15"
-      }`}
       aria-label={`Mark ${title} ${done ? "incomplete" : "complete"}`}
     >
       {done ? <Check size={15} /> : <Play size={13} />}
@@ -51,15 +60,17 @@ export function TaskLockToggle({
     <button
       type="button"
       disabled={pending}
-      onClick={() =>
+      onClick={(event) => {
+        event.stopPropagation();
         startTransition(async () => {
           await toggleTaskLocked(taskId, !locked, partyId);
-        })
-      }
-      className="btn-icon h-8 w-8"
+        });
+      }}
+      className="chip"
       aria-label={locked ? "Unlock task" : "Lock task"}
     >
-      {locked ? <Unlock size={14} /> : <Lock size={14} />}
+      {locked ? <Lock size={13} /> : <Unlock size={13} />}
+      {locked ? "Locked" : "Lock"}
     </button>
   );
 }

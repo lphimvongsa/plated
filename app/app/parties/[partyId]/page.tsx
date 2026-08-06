@@ -128,43 +128,67 @@ export default async function PartyOverviewPage({ params }: { params: Promise<{ 
           </div>
 
           <div>
-            {[
-              [checklistDone[0], "Choose menu structure", party.service_style || "Not set"],
+            {(
               [
-                checklistDone[1],
-                "Add and scale recipes",
-                `${(recipes ?? []).length} dishes · ${party.planning_guest_count} servings`,
-              ],
-              [
-                checklistDone[2],
-                "Resolve allergy conflicts",
-                allergyFlags ? `${allergyFlags} still need review` : "No allergy flags",
-              ],
-              [
-                checklistDone[3],
-                "Add dress code and bring-a-bottle note",
-                [party.dress_code, party.guest_contribution_notes].filter(Boolean).join(" · ") || "Not set",
-              ],
-              [
-                checklistDone[4],
-                "Send invitations",
-                guestList.length ? `${pending} awaiting reply` : "No guests yet",
-              ],
-            ].map(([complete, title, detail], index) => (
-              <div key={title as string} className="grid grid-cols-[32px_1fr_auto] gap-3 border-b border-ink/15 py-5">
-                <span className={`font-editorial text-2xl ${complete ? "text-olive" : "text-tomato"}`}>0{index + 1}</span>
+                {
+                  complete: checklistDone[0],
+                  title: "Choose menu structure",
+                  detail: party.service_style || "Not set",
+                  href: `${base}/settings`,
+                },
+                {
+                  complete: checklistDone[1],
+                  title: "Add and scale recipes",
+                  detail: `${(recipes ?? []).length} dishes · ${party.planning_guest_count} servings`,
+                  href: `${base}/menu`,
+                },
+                {
+                  complete: checklistDone[2],
+                  title: "Resolve allergy conflicts",
+                  detail: allergyFlags ? `${allergyFlags} still need review` : "No allergy flags",
+                  href: `${base}/menu`,
+                },
+                {
+                  complete: checklistDone[3],
+                  title: "Add dress code and bring-a-bottle note",
+                  detail:
+                    [party.dress_code, party.guest_contribution_notes].filter(Boolean).join(" · ") || "Not set",
+                  href: `${base}/settings`,
+                },
+                {
+                  complete: checklistDone[4],
+                  title: "Send invitations",
+                  detail: guestList.length ? `${pending} awaiting reply` : "No guests yet",
+                  href: `${base}/guests`,
+                },
+              ] as const
+            ).map((item, index) => (
+              <Link
+                key={item.title}
+                href={item.href}
+                className="group grid grid-cols-[32px_1fr_auto] gap-3 border-b border-ink/15 py-5 transition hover:bg-ink/[0.02]"
+              >
+                <span className={`font-editorial text-2xl ${item.complete ? "text-olive" : "text-tomato"}`}>
+                  0{index + 1}
+                </span>
                 <div>
-                  <p className="text-sm font-semibold">{title as string}</p>
-                  <p className={`mt-1 text-xs ${complete ? "text-ink/45" : "font-semibold text-tomato"}`}>
-                    {detail as string}
+                  <p className="text-sm font-semibold group-hover:text-tomato">{item.title}</p>
+                  <p className={`mt-1 text-xs ${item.complete ? "text-ink/45" : "font-semibold text-tomato"}`}>
+                    {item.detail}
                   </p>
                 </div>
-                <span
-                  className={`mt-0.5 grid h-5 w-5 place-items-center rounded-full border ${complete ? "border-olive bg-olive text-paper" : "border-ink/25"}`}
-                >
-                  {complete ? <Check size={12} /> : null}
+                <span className="mt-0.5 flex items-start gap-2">
+                  <span
+                    className={`grid h-5 w-5 place-items-center rounded-full border ${item.complete ? "border-olive bg-olive text-paper" : "border-ink/25"}`}
+                  >
+                    {item.complete ? <Check size={12} /> : null}
+                  </span>
+                  <ArrowRight
+                    size={14}
+                    className="mt-0.5 text-ink/25 transition group-hover:translate-x-0.5 group-hover:text-tomato"
+                  />
                 </span>
-              </div>
+              </Link>
             ))}
           </div>
         </article>

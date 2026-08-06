@@ -1,8 +1,15 @@
 "use client";
 
-import { Modal } from "@/components/modal";
+import { ImportRecipeModal } from "@/components/recipe/import-recipe-modal";
 import { formatMinutes } from "@/lib/rsvp";
-import { AlertTriangle, Clock3, FileImage, FileText, Link2, PencilLine, Plus, Search, Upload } from "lucide-react";
+import {
+  AlertTriangle,
+  Clock3,
+  PencilLine,
+  Plus,
+  Search,
+} from "lucide-react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
 export type PartyRecipeCard = {
@@ -16,12 +23,12 @@ export type PartyRecipeCard = {
   servings: number;
 };
 
-export function RecipesGrid({ recipes }: { recipes: PartyRecipeCard[] }) {
+export function RecipesGrid({ recipes, partyId }: { recipes: PartyRecipeCard[]; partyId: string }) {
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState("URL");
-  const [imported, setImported] = useState(false);
   const [query, setQuery] = useState("");
   const [course, setCourse] = useState("All courses");
+
+  const newRecipeHref = `/app/recipes/new?partyId=${partyId}`;
 
   const filtered = useMemo(() => {
     return recipes.filter((recipe) => {
@@ -40,11 +47,9 @@ export function RecipesGrid({ recipes }: { recipes: PartyRecipeCard[] }) {
           <h2 className="font-editorial text-5xl font-semibold">Course Recipes</h2>
         </div>
         <button
+          type="button"
           className="btn-primary"
-          onClick={() => {
-            setImported(false);
-            setOpen(true);
-          }}
+          onClick={() => setOpen(true)}
         >
           <Plus size={16} /> Import recipe
         </button>
@@ -69,133 +74,52 @@ export function RecipesGrid({ recipes }: { recipes: PartyRecipeCard[] }) {
       <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
         {filtered.map((recipe) => (
           <article key={recipe.id} className="card overflow-hidden">
-            <div className="relative h-56 overflow-hidden bg-ink">
-              <img src={recipe.image_url || "/photos/party-04.webp"} alt="" className="h-full w-full object-cover" />
-              <div className="absolute left-4 top-4 flex gap-2">
-                <span className="chip border-paper/20 bg-paper/90">{recipe.course || "Recipe"}</span>
-                {recipe.allergy_notes ? (
-                  <span className="chip border-tomato/20 bg-tomato text-paper">
-                    <AlertTriangle size={12} /> allergy
+            <Link href={`/app/parties/${partyId}/recipes/${recipe.id}`} className="group block">
+              <div className="relative h-56 overflow-hidden bg-ink">
+                <img src={recipe.image_url || "/photos/party-04.webp"} alt="" className="h-full w-full object-cover" />
+                <div className="absolute left-4 top-4 flex gap-2">
+                  <span className="chip border-paper/20 bg-paper/90">{recipe.course || "Recipe"}</span>
+                  {recipe.allergy_notes ? (
+                    <span className="chip border-tomato/20 bg-tomato text-paper">
+                      <AlertTriangle size={12} /> allergy
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+              <div className="p-5">
+                <h3 className="font-editorial text-3xl font-semibold leading-tight transition-colors duration-200 group-hover:text-tomato">
+                  {recipe.title}
+                </h3>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <span className="chip">
+                    <Clock3 size={13} /> {formatMinutes(recipe.prep_minutes)} prep
                   </span>
-                ) : null}
+                  <span className="chip">{formatMinutes(recipe.cook_minutes)} cook</span>
+                  <span className="chip">{recipe.servings} servings</span>
+                </div>
               </div>
-            </div>
-            <div className="p-5">
-              <h3 className="font-editorial text-3xl font-semibold leading-tight">{recipe.title}</h3>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <span className="chip">
-                  <Clock3 size={13} /> {formatMinutes(recipe.prep_minutes)} prep
-                </span>
-                <span className="chip">{formatMinutes(recipe.cook_minutes)} cook</span>
-                <span className="chip">{recipe.servings} servings</span>
-              </div>
-              <div className="mt-5 flex gap-2">
-                <button className="btn-secondary flex-1">
-                  <PencilLine size={15} /> Edit
-                </button>
-                <button className="btn-secondary px-4">•••</button>
-              </div>
+            </Link>
+            <div className="border-t border-ink/8 px-5 pb-5">
+              <Link href={`/app/parties/${partyId}/recipes/${recipe.id}`} className="btn-secondary mt-4 flex w-full">
+                <PencilLine size={15} /> Edit
+              </Link>
             </div>
           </article>
         ))}
         <button
+          type="button"
           onClick={() => setOpen(true)}
-          className="min-h-[390px] rounded-[1.75rem] border-2 border-dashed border-ink/15 p-8 text-ink/45 transition hover:border-tomato hover:bg-tomato/5 hover:text-tomato"
+          className="flex min-h-[390px] flex-col items-center justify-center rounded-[1.75rem] border-2 border-dashed border-ink/15 p-8 text-ink/45 transition hover:border-tomato hover:bg-tomato/5 hover:text-tomato"
         >
-          <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-current/10">
+          <span className="grid h-14 w-14 place-items-center rounded-full bg-current/10">
             <Plus size={23} />
           </span>
           <p className="mt-6 font-editorial text-2xl font-semibold">Add another recipe</p>
-          <p className="mt-2 text-sm">URL, text, PDF, image, or manual entry</p>
+          <p className="mt-2 text-sm">URL, text, PDF, or manual entry</p>
         </button>
       </section>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Import a recipe">
-        {!imported ? (
-          <>
-            <div className="flex overflow-x-auto rounded-full border border-ink/15 bg-white/40 p-1">
-              {["URL", "Text", "PDF / image", "Manual"].map((name) => (
-                <button
-                  key={name}
-                  onClick={() => setTab(name)}
-                  className={`min-w-max flex-1 rounded-full px-4 py-2 text-xs font-bold ${tab === name ? "bg-ink text-paper" : "text-ink/50"}`}
-                >
-                  {name}
-                </button>
-              ))}
-            </div>
-            <div className="mt-6">
-              {tab === "URL" ? (
-                <div>
-                  <div className="rounded-2xl bg-orange/8 p-4 text-sm text-ink/60">
-                    <Link2 size={18} className="mb-3 text-orange" />
-                    Paste a public recipe URL. plated. will extract ingredients, measurements, times, instructions, and
-                    the original source.
-                  </div>
-                  <label className="mt-5 block">
-                    <span className="mb-2 block text-xs font-semibold">Recipe URL</span>
-                    <input className="field" placeholder="https://example.com/recipe" />
-                  </label>
-                </div>
-              ) : null}
-              {tab === "Text" ? (
-                <label className="block">
-                  <span className="mb-2 block text-xs font-semibold">Recipe text</span>
-                  <textarea className="field min-h-52" placeholder="Paste the title, ingredients, and instructions here..." />
-                </label>
-              ) : null}
-              {tab === "PDF / image" ? (
-                <button className="flex min-h-64 w-full flex-col items-center justify-center rounded-[1.5rem] border-2 border-dashed border-ink/20 bg-white/30 p-6 text-center">
-                  <Upload size={26} />
-                  <p className="mt-4 font-editorial text-2xl font-semibold">Drop a PDF or photo here</p>
-                  <p className="mt-2 max-w-sm text-xs leading-relaxed text-ink/45">
-                    The source file will be used for extraction and not retained in the production design.
-                  </p>
-                </button>
-              ) : null}
-              {tab === "Manual" ? (
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <label>
-                    <span className="mb-2 block text-xs font-semibold">Recipe name</span>
-                    <input className="field" placeholder="Dish name" />
-                  </label>
-                  <label>
-                    <span className="mb-2 block text-xs font-semibold">Servings</span>
-                    <input className="field" type="number" defaultValue={4} />
-                  </label>
-                  <label className="sm:col-span-2">
-                    <span className="mb-2 block text-xs font-semibold">Ingredients</span>
-                    <textarea className="field min-h-32" placeholder="One ingredient per line" />
-                  </label>
-                </div>
-              ) : null}
-            </div>
-            <button className="btn-primary mt-6 w-full" onClick={() => setImported(true)}>
-              {tab === "URL" ? (
-                <Link2 size={16} />
-              ) : tab === "Text" ? (
-                <FileText size={16} />
-              ) : tab === "PDF / image" ? (
-                <FileImage size={16} />
-              ) : (
-                <PencilLine size={16} />
-              )}{" "}
-              Extract recipe
-            </button>
-          </>
-        ) : (
-          <div>
-            <div className="rounded-[1.5rem] bg-olive/10 p-5">
-              <p className="text-xs font-bold uppercase tracking-widest text-olive">Mock extraction complete</p>
-              <h3 className="mt-2 font-editorial text-3xl font-semibold">Imported recipe</h3>
-              <p className="mt-2 text-sm text-ink/55">Review and save to the party cookbook.</p>
-            </div>
-            <button className="btn-primary mt-6 w-full" onClick={() => setOpen(false)}>
-              Save to party cookbook
-            </button>
-          </div>
-        )}
-      </Modal>
+      <ImportRecipeModal open={open} onClose={() => setOpen(false)} newRecipeHref={newRecipeHref} />
     </div>
   );
 }

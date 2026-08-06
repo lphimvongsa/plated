@@ -1,7 +1,8 @@
+import { PartyListItem } from "@/components/party/party-list-item";
 import { formatPartyWhen } from "@/lib/calendar";
 import type { Database } from "@/lib/database.types";
 import { createClient } from "@/lib/supabase/server";
-import { ArrowRight, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -16,11 +17,12 @@ export default async function PartiesPage() {
   } = await supabase.auth.getUser();
 
   if (!user) redirect("/auth/login");
+  const userId = user.id;
 
   const { data: memberships } = await supabase
     .from("party_members")
     .select("role, party_id")
-    .eq("user_id", user.id);
+    .eq("user_id", userId);
 
   const roleByParty = new Map((memberships ?? []).map((row) => [row.party_id, row.role]));
   const partyIds = [...roleByParty.keys()];
@@ -56,43 +58,25 @@ export default async function PartiesPage() {
     const days = Math.abs(Math.ceil((new Date(party.starts_at).getTime() - now) / DAY_MS));
     const countdown =
       tense === "upcoming" ? `${days} day${days === 1 ? "" : "s"} away` : `${days} day${days === 1 ? "" : "s"} ago`;
-    const role = roleByParty.get(party.id);
+    const role = roleByParty.get(party.id) ?? null;
 
     return (
-      <Link
+      <PartyListItem
         key={party.id}
-        href={`/app/parties/${party.id}`}
-        className="group grid gap-5 border-b border-ink/15 py-6 md:grid-cols-[170px_1fr_auto] md:items-center"
-      >
-        <div className={`h-28 overflow-hidden md:h-24 ${tense === "past" ? "opacity-70 grayscale" : ""}`}>
-          <img
-            src={party.hero_image || "/photos/party-01.webp"}
-            alt=""
-            className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
-          />
-        </div>
-
-        <div>
-          <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-tomato">
-            {when.date} · {when.time}
-          </p>
-          <h3 className="mt-2 font-editorial text-3xl font-semibold leading-none transition group-hover:text-tomato md:text-4xl">
-            {party.name}
-          </h3>
-          <p className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-ink/45">
-            <span>{party.location || "Location TBD"}</span>
-            <span>
-              {attending} attending · {dishes} dish{dishes === 1 ? "" : "es"}
-            </span>
-            {role ? <span>You are {role}</span> : null}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-4 md:justify-end">
-          <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-ink/42">{countdown}</span>
-          <ArrowRight size={18} className="text-ink/28 transition group-hover:translate-x-1 group-hover:text-tomato" />
-        </div>
-      </Link>
+        party={{
+          id: party.id,
+          name: party.name,
+          location: party.location,
+          hero_image: party.hero_image,
+        }}
+        whenLabel={`${when.date} · ${when.time}`}
+        attending={attending}
+        dishes={dishes}
+        countdown={countdown}
+        role={role}
+        canDelete={party.owner_id === userId}
+        tense={tense}
+      />
     );
   }
 

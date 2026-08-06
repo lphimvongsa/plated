@@ -21,8 +21,10 @@ export default async function PartySettingsPage({ params }: { params: Promise<{ 
         service_style: party.service_style,
         dress_code: party.dress_code,
         guest_contribution_notes: party.guest_contribution_notes,
+        planning_guest_count: party.planning_guest_count,
         date: toDateInputValue(party.starts_at, party.timezone),
         time: toTimeInputValue(party.starts_at, party.timezone),
+        prep_date: toDateInputValue(party.prep_starts_at ?? party.starts_at, party.timezone),
       }}
     />
   );

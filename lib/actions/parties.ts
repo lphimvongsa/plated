@@ -3,9 +3,20 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { Database } from "@/lib/database.types";
+import { schedulePartyDerivedRefresh } from "@/lib/party/refresh-derived";
 import { createClient } from "@/lib/supabase/server";
 
 type PartyUpdate = Database["public"]["Tables"]["parties"]["Update"];
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Prep opens at 9am local on the lead day so the timeline starts on a whole day. */
+function prepStartFromLead(startsAt: Date, leadDays: number) {
+  const days = Number.isFinite(leadDays) ? Math.max(0, Math.min(90, leadDays)) : 14;
+  const prep = new Date(startsAt.getTime() - days * DAY_MS);
+  if (days > 0) prep.setHours(9, 0, 0, 0);
+  return prep;
+}
 
 export async function createParty(formData: FormData) {
   const supabase = await createClient();
@@ -26,6 +37,7 @@ export async function createParty(formData: FormData) {
   const serviceStyle = String(formData.get("service_style") ?? "Family style").trim();
   const guestCount = Number(formData.get("guest_count") ?? 8);
   const startsAt = new Date(`${date}T${time}:00`);
+  const prepLeadDays = Number(formData.get("prep_lead_days") ?? 14);
 
   const { data: party, error } = await supabase
     .from("parties")
@@ -34,6 +46,7 @@ export async function createParty(formData: FormData) {
       name,
       starts_at: startsAt.toISOString(),
       ends_at: new Date(startsAt.getTime() + 3 * 60 * 60 * 1000).toISOString(),
+      prep_starts_at: prepStartFromLead(startsAt, prepLeadDays).toISOString(),
       location,
       theme,
       cuisine,
@@ -49,17 +62,7 @@ export async function createParty(formData: FormData) {
     return { error: error?.message ?? "Could not create party." };
   }
 
-  const { error: memberError } = await supabase.from("party_members").insert({
-    party_id: party.id,
-    user_id: user.id,
-    role: "owner",
-  });
-
-  if (memberError) {
-    await supabase.from("parties").delete().eq("id", party.id);
-    return { error: memberError.message };
-  }
-
+  // Owner membership is created by parties_add_owner_member trigger.
   redirect(`/app/parties/${party.id}`);
 }
 
@@ -72,8 +75,10 @@ export async function updatePartySettings(partyId: string, formData: FormData) {
   const serviceStyle = String(formData.get("service_style") ?? "").trim();
   const dressCode = String(formData.get("dress_code") ?? "").trim();
   const guestContributionNotes = String(formData.get("guest_contribution_notes") ?? "").trim();
+  const planningGuestCountRaw = formData.get("planning_guest_count");
   const date = String(formData.get("date") ?? "");
   const time = String(formData.get("time") ?? "");
+  const prepDate = String(formData.get("prep_date") ?? "");
 
   const patch: PartyUpdate = {
     name,
@@ -85,24 +90,51 @@ export async function updatePartySettings(partyId: string, formData: FormData) {
     guest_contribution_notes: guestContributionNotes,
   };
 
+  if (planningGuestCountRaw != null && planningGuestCountRaw !== "") {
+    const planningGuestCount = Number(planningGuestCountRaw);
+    if (Number.isFinite(planningGuestCount) && planningGuestCount > 0) {
+      patch.planning_guest_count = planningGuestCount;
+    }
+  }
+
   if (date && time) {
     const startsAt = new Date(`${date}T${time}:00`);
     patch.starts_at = startsAt.toISOString();
     patch.ends_at = new Date(startsAt.getTime() + 3 * 60 * 60 * 1000).toISOString();
   }
 
+  if (prepDate) {
+    patch.prep_starts_at = new Date(`${prepDate}T09:00:00`).toISOString();
+  }
+
   const { error } = await supabase.from("parties").update(patch).eq("id", partyId);
   if (error) return { error: error.message };
 
+  if (patch.planning_guest_count != null) {
+    schedulePartyDerivedRefresh(partyId);
+  }
+
   revalidatePath(`/app/parties/${partyId}`);
+  revalidatePath(`/app/parties/${partyId}/menu`);
+  revalidatePath(`/app/parties/${partyId}/shopping`);
+  revalidatePath(`/app/parties/${partyId}/costs`);
+  revalidatePath(`/app/parties/${partyId}/timeline`);
   return { error: null };
 }
 
 export async function deleteParty(partyId: string) {
   const supabase = await createClient();
-  const { error } = await supabase.from("parties").delete().eq("id", partyId);
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in." };
+
+  const { error } = await supabase.from("parties").delete().eq("id", partyId).eq("owner_id", user.id);
   if (error) return { error: error.message };
-  redirect("/app");
+
+  revalidatePath("/app");
+  revalidatePath("/app/parties");
+  redirect("/app/parties");
 }
 
 export async function toggleGroceryOwned(itemId: string, alreadyOwned: boolean, partyId: string) {

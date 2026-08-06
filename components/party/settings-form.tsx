@@ -13,8 +13,10 @@ type SettingsParty = {
   service_style: string | null;
   dress_code: string | null;
   guest_contribution_notes: string | null;
+  planning_guest_count: number;
   date: string;
   time: string;
+  prep_date: string;
 };
 
 export function PartySettingsForm({ party }: { party: SettingsParty }) {
@@ -70,6 +72,27 @@ export function PartySettingsForm({ party }: { party: SettingsParty }) {
               <label className="sm:col-span-2">
                 <span className="mb-2 block text-xs font-semibold">Location</span>
                 <input className="field" name="location" defaultValue={party.location ?? ""} />
+              </label>
+              <label>
+                <span className="mb-2 block text-xs font-semibold">Prep starts</span>
+                <input className="field" name="prep_date" type="date" defaultValue={party.prep_date} />
+                <span className="mt-1 block text-xs text-ink/45">
+                  The first day on the party timeline.
+                </span>
+              </label>
+              <label>
+                <span className="mb-2 block text-xs font-semibold">Party servings</span>
+                <input
+                  className="field"
+                  name="planning_guest_count"
+                  type="number"
+                  min={1}
+                  defaultValue={party.planning_guest_count}
+                  required
+                />
+                <span className="mt-1 block text-xs text-ink/45">
+                  Every menu dish scales to this number. Not tied to RSVPs.
+                </span>
               </label>
             </div>
           </article>

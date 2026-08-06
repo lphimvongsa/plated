@@ -90,12 +90,13 @@ export function CostsPanel({
             </div>
             <div className="divide-y divide-ink/8">
               {recipes.length === 0 ? (
-                <p className="p-5 text-sm text-ink/45">No recipe cost estimates yet.</p>
+                <p className="p-5 text-sm text-ink/45">No dishes on the menu yet.</p>
               ) : (
                 recipes.map((recipe) => {
                   const cost = recipe.estimated_cost ?? 0;
                   return (
                     <div key={recipe.id} className="grid grid-cols-[54px_1fr_auto] items-center gap-4 p-5">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={recipe.image_url || "/photos/party-04.webp"}
                         alt=""
@@ -104,7 +105,7 @@ export function CostsPanel({
                       <div>
                         <p className="text-sm font-semibold">{recipe.title}</p>
                         <p className="mt-1 text-xs text-ink/45">
-                          ${((cost / (recipe.servings || guestCount || 1))).toFixed(2)} per guest
+                          ${(cost / Math.max(1, guestCount)).toFixed(2)} per guest · scaled to {guestCount}
                         </p>
                       </div>
                       <p className="font-editorial text-xl font-semibold">${cost.toFixed(2)}</p>

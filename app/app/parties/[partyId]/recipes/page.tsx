@@ -11,5 +11,5 @@ export default async function PartyRecipesPage({ params }: { params: Promise<{ p
     .eq("party_id", partyId)
     .order("created_at", { ascending: true });
 
-  return <RecipesGrid recipes={recipes ?? []} />;
+  return <RecipesGrid recipes={recipes ?? []} partyId={partyId} />;
 }

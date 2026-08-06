@@ -1,4 +1,7 @@
 import { GroceryOwnedToggle, GroceryPurchasedToggle } from "@/components/party/shopping-toggles";
+import { regenerateShoppingList } from "@/lib/actions/shopping";
+import { getPartyCostSummary } from "@/lib/party/cost-summary";
+import { formatGroceryQuantity } from "@/lib/recipes/quantity";
 import { createClient } from "@/lib/supabase/server";
 import { CircleDollarSign, PackageCheck, Plus, ShoppingBasket } from "lucide-react";
 import { notFound } from "next/navigation";
@@ -7,12 +10,29 @@ export default async function ShoppingPage({ params }: { params: Promise<{ party
   const { partyId } = await params;
   const supabase = await createClient();
 
-  const { data: party } = await supabase
+  let { data: party } = await supabase
     .from("parties")
-    .select("id, planning_guest_count")
+    .select("id, planning_guest_count, shopping_dirty")
     .eq("id", partyId)
     .maybeSingle();
   if (!party) notFound();
+
+  // Fallback only — normal path regenerates via after() on mutations.
+  if (party.shopping_dirty) {
+    try {
+      await regenerateShoppingList(partyId);
+    } catch {
+      // Continue with existing list if regen fails.
+    }
+    const refreshed = await supabase
+      .from("parties")
+      .select("id, planning_guest_count, shopping_dirty")
+      .eq("id", partyId)
+      .maybeSingle();
+    if (refreshed.data) party = refreshed.data;
+  }
+
+  const summary = await getPartyCostSummary(supabase, partyId);
 
   const { data: items } = await supabase
     .from("grocery_items")
@@ -21,13 +41,16 @@ export default async function ShoppingPage({ params }: { params: Promise<{ party
     .order("sort_order");
 
   const allItems = items ?? [];
+  const sourceIds = Array.from(new Set(allItems.flatMap((item) => item.source_recipe_ids ?? [])));
+  const { data: sourceRecipes } = sourceIds.length
+    ? await supabase.from("recipes").select("id, title").in("id", sourceIds)
+    : { data: [] as { id: string; title: string }[] };
+  const recipeTitleById = new Map((sourceRecipes ?? []).map((recipe) => [recipe.id, recipe.title]));
+
   const owned = allItems.filter((item) => item.already_owned);
   const buyList = allItems.filter((item) => !item.already_owned);
   const purchased = buyList.filter((item) => item.purchased);
-  const total = buyList.reduce((sum, item) => sum + (item.estimated_cost ?? 0), 0);
-  const purchasedTotal = purchased.reduce((sum, item) => sum + (item.estimated_cost ?? 0), 0);
-  const pantrySavings = owned.reduce((sum, item) => sum + (item.estimated_cost ?? 0), 0);
-  const split = Math.max(1, party.planning_guest_count || 1);
+  const split = Math.max(1, summary.guestCount || 1);
 
   const groups = new Map<string, typeof allItems>();
   for (const item of allItems) {
@@ -50,11 +73,15 @@ export default async function ShoppingPage({ params }: { params: Promise<{ party
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <article className="card p-5">
           <div className="flex items-center justify-between">
-            <p className="eyebrow">Remaining estimate</p>
+            <p className="eyebrow">Estimated total</p>
             <CircleDollarSign className="text-tomato" size={20} />
           </div>
-          <p className="mt-3 font-editorial text-4xl font-semibold">${total.toFixed(2)}</p>
-          <p className="mt-2 text-xs text-ink/45">After pantry items</p>
+          <p className="mt-3 font-editorial text-4xl font-semibold">
+            ${summary.estimatedTotal.toFixed(2)}
+          </p>
+          <p className="mt-2 text-xs text-ink/45">
+            ${summary.remainingTotal.toFixed(2)} still to buy · matches Costs
+          </p>
         </article>
         <article className="card p-5">
           <div className="flex items-center justify-between">
@@ -64,19 +91,19 @@ export default async function ShoppingPage({ params }: { params: Promise<{ party
           <p className="mt-3 font-editorial text-4xl font-semibold">
             {purchased.length}/{buyList.length}
           </p>
-          <p className="mt-2 text-xs text-ink/45">${purchasedTotal.toFixed(2)} checked off</p>
+          <p className="mt-2 text-xs text-ink/45">${summary.purchasedTotal.toFixed(2)} checked off</p>
         </article>
         <article className="card p-5">
           <p className="eyebrow">Pantry savings</p>
-          <p className="mt-3 font-editorial text-4xl font-semibold">${pantrySavings.toFixed(2)}</p>
+          <p className="mt-3 font-editorial text-4xl font-semibold">${summary.pantrySavings.toFixed(2)}</p>
           <p className="mt-2 text-xs text-ink/45">{owned.length} items already owned</p>
         </article>
         <article className="rounded-[1.75rem] bg-orange p-5 text-paper">
           <p className="eyebrow !text-paper/60">Party split</p>
-          <p className="mt-3 font-editorial text-4xl font-semibold">${(total / split).toFixed(2)}</p>
-          <p className="mt-2 text-xs text-paper/65">
-            per person · {split} ways
+          <p className="mt-3 font-editorial text-4xl font-semibold">
+            ${(summary.estimatedTotal / split).toFixed(2)}
           </p>
+          <p className="mt-2 text-xs text-paper/65">per person · {split} ways</p>
         </article>
       </section>
       <section className="grid gap-6 lg:grid-cols-[1fr_280px]">
@@ -84,41 +111,48 @@ export default async function ShoppingPage({ params }: { params: Promise<{ party
           {allItems.length === 0 ? (
             <article className="card p-8 text-center">
               <p className="font-editorial text-3xl font-semibold">Shopping list is empty.</p>
-              <p className="mt-3 text-sm text-ink/50">Grocery items will appear here once recipes are scaled.</p>
+              <p className="mt-3 text-sm text-ink/50">
+                Grocery items appear here once recipes are on the menu.
+              </p>
             </article>
           ) : null}
-          {[...groups.entries()].map(([groupName, groupItems]) => (
-            <article key={groupName} className="card overflow-hidden">
+          {Array.from(groups.entries()).map(([category, groupItems]) => (
+            <article key={category} className="card overflow-hidden">
               <div className="flex items-center justify-between border-b border-ink/10 px-5 py-4">
-                <h3 className="font-editorial text-2xl font-semibold">{groupName}</h3>
-                <span className="chip">{groupItems.length} items</span>
+                <h3 className="font-editorial text-2xl font-semibold">{category}</h3>
+                <span className="chip">{groupItems.length}</span>
               </div>
               <div className="divide-y divide-ink/8">
                 {groupItems.map((item) => {
-                  const isOwned = item.already_owned;
-                  const isPurchased = item.purchased;
+                  const sources = (item.source_recipe_ids ?? [])
+                    .map((id) => recipeTitleById.get(id))
+                    .filter(Boolean);
                   return (
                     <div
                       key={item.id}
-                      className={`grid grid-cols-[auto_1fr_auto] items-center gap-3 px-4 py-4 sm:px-5 ${isOwned || isPurchased ? "bg-olive/5" : ""}`}
+                      className={`flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between ${item.already_owned || item.purchased ? "opacity-55" : ""}`}
                     >
-                      <GroceryPurchasedToggle
-                        itemId={item.id}
-                        partyId={partyId}
-                        purchased={isPurchased}
-                        owned={isOwned}
-                      />
                       <div className="min-w-0">
-                        <p className={`text-sm font-semibold ${isPurchased || isOwned ? "text-ink/45 line-through" : ""}`}>
-                          {item.ingredient_name}
-                        </p>
+                        <p className="font-semibold">{item.ingredient_name}</p>
                         <p className="mt-1 text-xs text-ink/45">
-                          {[item.required_quantity, item.unit].filter(Boolean).join(" ") || "Quantity TBD"}
+                          {formatGroceryQuantity(item.quantity)}
+                          {item.unit ? ` ${item.unit}` : ""}
+                          {sources.length ? ` · ${sources.join(", ")}` : ""}
                         </p>
                       </div>
-                      <div className="text-right">
+                      <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-bold">${(item.estimated_cost ?? 0).toFixed(2)}</p>
-                        <GroceryOwnedToggle itemId={item.id} partyId={partyId} owned={isOwned} />
+                        <GroceryOwnedToggle
+                          itemId={item.id}
+                          partyId={partyId}
+                          owned={item.already_owned}
+                        />
+                        <GroceryPurchasedToggle
+                          itemId={item.id}
+                          partyId={partyId}
+                          purchased={item.purchased}
+                          owned={item.already_owned}
+                        />
                       </div>
                     </div>
                   );
@@ -129,17 +163,14 @@ export default async function ShoppingPage({ params }: { params: Promise<{ party
         </div>
         <aside className="space-y-4">
           <article className="card p-5">
-            <ShoppingBasket size={21} className="text-tomato" />
-            <h3 className="mt-5 font-editorial text-3xl font-semibold">Pantry check</h3>
+            <div className="flex items-center gap-2">
+              <ShoppingBasket size={18} className="text-tomato" />
+              <p className="eyebrow">How totals work</p>
+            </div>
             <p className="mt-3 text-sm leading-relaxed text-ink/55">
-              You marked {owned.length} items as available. Before shopping, confirm that you have enough for the scaled
-              menu.
+              Estimated total matches the Costs page: all non-pantry grocery lines for the current menu,
+              scaled to {summary.guestCount} guests.
             </p>
-          </article>
-          <article className="rounded-[1.75rem] bg-ink p-5 text-paper">
-            <p className="eyebrow !text-paper/50">Measurement mode</p>
-            <p className="mt-3 font-editorial text-2xl font-semibold">US customary</p>
-            <p className="mt-2 text-xs text-paper/50">Convert the entire list at any time.</p>
           </article>
         </aside>
       </section>
