@@ -41,12 +41,7 @@ export default async function ShoppingPage({ params }: { params: Promise<{ party
     <div className="space-y-8">
       <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="eyebrow">Scaled shopping list</p>
-          <h2 className="mt-2 font-editorial text-5xl font-semibold">Buy only what the table needs.</h2>
-          <p className="mt-4 max-w-2xl text-sm leading-relaxed text-ink/55">
-            Ingredients are consolidated across recipes and organized by store section. Mark pantry items to remove them
-            from the estimate.
-          </p>
+          <h2 className="font-editorial text-5xl font-semibold">Grocery List</h2>
         </div>
         <button className="btn-primary" disabled>
           <Plus size={16} /> Add item

@@ -1,7 +1,7 @@
 import { formatPartyWhen } from "@/lib/calendar";
 import { formatRsvpStatus, initialsFromName } from "@/lib/rsvp";
 import { createClient } from "@/lib/supabase/server";
-import { AlertTriangle, ArrowRight, Check, CheckCircle2, Clock3, DollarSign, ListChecks, ShoppingBasket, Sparkles, Users } from "lucide-react";
+import { ArrowRight, Check, CheckCircle2, DollarSign, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -13,27 +13,33 @@ export default async function PartyOverviewPage({ params }: { params: Promise<{ 
   const { data: party } = await supabase.from("parties").select("*").eq("id", partyId).maybeSingle();
   if (!party) notFound();
 
-  const [{ data: guests }, { data: recipes }, { data: grocery }, { data: tasks }] = await Promise.all([
+  const [{ data: guests }, { data: recipes }, { data: grocery }, { data: invite }] = await Promise.all([
     supabase.from("guests").select("id, name, rsvp_status, allergies, plus_one_count").eq("party_id", partyId),
     supabase.from("recipes").select("id, allergy_notes").eq("party_id", partyId),
     supabase
       .from("grocery_items")
       .select("estimated_cost, already_owned")
       .eq("party_id", partyId),
-    supabase.from("tasks").select("id, title, status, start_at").eq("party_id", partyId).order("sort_order"),
+    supabase
+      .from("invites")
+      .select("token")
+      .eq("party_id", partyId)
+      .is("revoked_at", null)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
   ]);
+
+  const previewToken = invite?.token ?? null;
+  const previewHref = previewToken ? `/invite/${previewToken}` : `${base}/guests`;
 
   const guestList = guests ?? [];
   const attending = guestList.filter((g) => g.rsvp_status === "attending").length;
-  const maybe = guestList.filter((g) => g.rsvp_status === "maybe").length;
   const pending = guestList.filter((g) => g.rsvp_status === "no_response").length;
   const allergyFlags = (recipes ?? []).filter((r) => r.allergy_notes).length;
-  const ownedCount = (grocery ?? []).filter((item) => item.already_owned).length;
   const shoppingEstimate = (grocery ?? [])
     .filter((item) => !item.already_owned)
     .reduce((sum, item) => sum + (item.estimated_cost ?? 0), 0);
-  const done = (tasks ?? []).filter((task) => task.status === "done").length;
-  const nextTask = (tasks ?? []).find((task) => task.status !== "done");
   const { date, time } = formatPartyWhen(party.starts_at, party.timezone);
   const daysAway = Math.max(
     0,
@@ -115,51 +121,10 @@ export default async function PartyOverviewPage({ params }: { params: Promise<{ 
         </div>
       </section>
 
-      <section className="grid border-y border-ink/20 sm:grid-cols-2 xl:grid-cols-4">
-        {[
-          [Users, `${attending} attending`, `${maybe} maybe · ${pending} pending`, `${base}/guests`],
-          [ListChecks, `${(recipes ?? []).length} dishes`, `${allergyFlags} allergy flags`, `${base}/menu`],
-          [
-            ShoppingBasket,
-            `$${shoppingEstimate.toFixed(2)} estimated`,
-            `${ownedCount} pantry items removed`,
-            `${base}/shopping`,
-          ],
-          [
-            Clock3,
-            `${done}/${(tasks ?? []).length} tasks done`,
-            nextTask ? `Next: ${nextTask.title}` : "No open tasks",
-            `${base}/timeline`,
-          ],
-        ].map(([Icon, title, copy, href], index) => {
-          const StatIcon = Icon as typeof Users;
-          return (
-            <Link
-              href={href as string}
-              key={title as string}
-              className={`group px-1 py-6 sm:px-6 ${index < 3 ? "border-b border-ink/15 xl:border-b-0 xl:border-r" : ""} ${index === 0 ? "sm:border-r" : index === 1 ? "sm:border-r-0" : index === 2 ? "sm:border-r" : ""}`}
-            >
-              <div className="flex items-start justify-between">
-                <StatIcon size={17} className="text-tomato" strokeWidth={1.6} />
-                <ArrowRight size={14} className="text-ink/25 transition group-hover:translate-x-1 group-hover:text-tomato" />
-              </div>
-              <p className="mt-6 font-editorial text-3xl font-semibold leading-none">{title as string}</p>
-              <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-ink/42">{copy as string}</p>
-            </Link>
-          );
-        })}
-      </section>
-
       <section className="grid gap-8 lg:grid-cols-[1.08fr_.92fr]">
         <article>
-          <div className="flex items-end justify-between gap-4 border-b border-ink/20 pb-4">
-            <div>
-              <p className="eyebrow">Planning checklist</p>
-              <h2 className="mt-2 font-editorial text-4xl font-semibold leading-none">Before invitations go out</h2>
-            </div>
-            <span className="text-[10px] font-bold uppercase tracking-[0.13em] text-tomato">
-              {checklistComplete} of 5
-            </span>
+          <div className="border-b border-ink/20 pb-4">
+            <h2 className="font-editorial text-4xl font-semibold leading-none">Planning Checklist</h2>
           </div>
 
           <div>
@@ -204,24 +169,28 @@ export default async function PartyOverviewPage({ params }: { params: Promise<{ 
           </div>
         </article>
 
-        <article className="border border-ink/15 bg-[#f8f4ec] p-6 md:p-7">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="eyebrow">Guest signals</p>
-              <h2 className="mt-2 font-editorial text-4xl font-semibold leading-none">What changed</h2>
-            </div>
-            <Users size={19} className="text-tomato" />
+        <Link
+          href={`${base}/guests`}
+          className="block border border-ink/15 bg-[#f8f4ec] p-6 transition hover:border-ink/30 md:p-7"
+        >
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <h2 className="font-editorial text-4xl font-semibold leading-none">Guest List</h2>
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-ink/48">
+              <span className="text-tomato">{attending} attending</span>
+              <span className="mx-2 text-ink/25">·</span>
+              <span>{guestList.length} invites sent</span>
+            </p>
           </div>
 
-          <div className="mt-7 divide-y divide-ink/15 border-y border-ink/15">
+          <div className="mt-7 max-h-[280px] overflow-y-auto divide-y divide-ink/15 border-y border-ink/15 pr-4">
             {guestList.length === 0 ? (
               <p className="py-6 text-sm text-ink/45">No guests yet. Add people from the Guests tab.</p>
             ) : (
-              guestList.slice(0, 4).map((guest, index) => {
+              guestList.map((guest, index) => {
                 const status = formatRsvpStatus(guest.rsvp_status);
                 const allergies = guest.allergies?.trim();
                 return (
-                  <div key={guest.id} className="grid grid-cols-[36px_1fr_auto] items-center gap-3 py-4">
+                  <div key={guest.id} className="grid grid-cols-[36px_1fr_auto] items-center gap-4 py-4">
                     <div
                       className={`grid h-9 w-9 place-items-center rounded-full text-[9px] font-bold ${index % 3 === 0 ? "bg-blush" : index % 3 === 1 ? "bg-gold" : "bg-olive text-paper"}`}
                     >
@@ -229,18 +198,13 @@ export default async function PartyOverviewPage({ params }: { params: Promise<{ 
                     </div>
                     <div className="min-w-0">
                       <p className="text-xs font-semibold">{guest.name}</p>
-                      <p className="mt-1 truncate text-[10px] text-ink/45">
-                        {status === "Attending"
-                          ? "RSVP’d yes"
-                          : status === "Maybe"
-                            ? "May bring guests"
-                            : "Awaiting response"}
-                        {allergies ? ` · ${allergies} allergy` : ""}
-                      </p>
+                      {allergies && allergies.toLowerCase() !== "none" ? (
+                        <p className="mt-1 inline-block max-w-full truncate rounded-[2px] bg-orange/15 px-1.5 py-0.5 text-[10px] font-semibold text-orange">
+                          {allergies}
+                        </p>
+                      ) : null}
                     </div>
-                    <span
-                      className={`text-[8px] font-bold uppercase tracking-[0.1em] ${allergies ? "text-tomato" : "text-ink/45"}`}
-                    >
+                    <span className="whitespace-nowrap text-[8px] font-bold uppercase tracking-[0.1em] text-ink/45">
                       {status}
                     </span>
                   </div>
@@ -248,31 +212,11 @@ export default async function PartyOverviewPage({ params }: { params: Promise<{ 
               })
             )}
           </div>
-          <Link href={`${base}/guests`} className="btn-secondary mt-6 w-full">
-            Manage guests
-          </Link>
-        </article>
+          <span className="btn-secondary mt-6 w-full">Manage guests</span>
+        </Link>
       </section>
 
-      <section className="grid gap-6 md:grid-cols-2">
-        <article className="border border-tomato/35 bg-[#f8f0e7] p-6 md:p-8">
-          <div className="flex items-center gap-2 text-tomato">
-            <AlertTriangle size={17} />
-            <span className="text-[9px] font-bold uppercase tracking-[0.15em]">Allergy alert</span>
-          </div>
-          <h3 className="mt-7 font-editorial text-4xl font-semibold leading-[0.9]">
-            {allergyFlags > 0
-              ? `${allergyFlags} dish${allergyFlags === 1 ? "" : "es"} need allergy review.`
-              : "No allergy flags on the menu."}
-          </h3>
-          <p className="mt-5 text-sm leading-relaxed text-ink/55">
-            Cross-check recipe allergy notes against guest responses before you send invitations.
-          </p>
-          <Link href={`${base}/menu`} className="editorial-link mt-7 text-tomato">
-            Find a replacement <ArrowRight size={12} />
-          </Link>
-        </article>
-
+      <section>
         <article className="border border-ink/20 bg-ink p-6 text-paper md:p-8">
           <div className="flex items-center gap-2 text-gold">
             <DollarSign size={17} />
@@ -292,6 +236,32 @@ export default async function PartyOverviewPage({ params }: { params: Promise<{ 
             View costs <ArrowRight size={12} />
           </Link>
         </article>
+      </section>
+
+      <section className="overflow-hidden border border-ink/15 bg-[#f8f4ec] lg:grid lg:grid-cols-[1.1fr_1fr]">
+        <div className="min-h-[220px] overflow-hidden border-b border-ink/15 lg:min-h-[280px] lg:border-b-0 lg:border-r">
+          <img
+            src="/photos/party-09.webp"
+            alt="Guest-facing table preview"
+            className="h-full w-full object-cover"
+          />
+        </div>
+        <div className="flex flex-col justify-center p-6 md:p-8">
+          <p className="font-handwritten text-xl text-tomato">Guest preview</p>
+          <h2 className="mt-3 font-editorial text-4xl font-semibold leading-[0.9]">
+            See how the menu looks on your invite.
+          </h2>
+          <p className="mt-4 max-w-md text-sm leading-relaxed text-ink/55">
+            Open the guest-facing invitation to check the menu, timing, and details before you send it out.
+          </p>
+          <Link
+            href={previewHref}
+            target={previewToken ? "_blank" : undefined}
+            className="btn-secondary mt-7 w-full sm:w-auto sm:self-start"
+          >
+            Preview invitation
+          </Link>
+        </div>
       </section>
     </div>
   );

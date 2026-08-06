@@ -1,12 +1,31 @@
-import { PhotoFrame } from "@/components/photo-frame";
 import { formatPartyWhen } from "@/lib/calendar";
 import type { Database } from "@/lib/database.types";
 import { createClient } from "@/lib/supabase/server";
-import { AlertTriangle, ArrowRight, CalendarDays, Check, Clock3, Plus, ShoppingBasket, Sparkles, Users } from "lucide-react";
+import { AlertTriangle, ArrowRight, CalendarDays, Clock3, Plus, ShoppingBasket } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 type Party = Database["public"]["Tables"]["parties"]["Row"];
+type OpenTask = Pick<
+  Database["public"]["Tables"]["tasks"]["Row"],
+  "id" | "party_id" | "title" | "description" | "start_at" | "assigned_name"
+>;
+type GuestSignal = Pick<
+  Database["public"]["Tables"]["guests"]["Row"],
+  "id" | "party_id" | "name" | "rsvp_status" | "allergies"
+>;
+type MenuDish = Pick<Database["public"]["Tables"]["recipes"]["Row"], "id" | "party_id" | "allergy_notes">;
+
+type Alert = {
+  id: string;
+  label: string;
+  title: string;
+  detail: string;
+  href: string;
+  urgent: boolean;
+};
+
+const DAY_MS = 1000 * 60 * 60 * 24;
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -28,7 +47,7 @@ export default async function DashboardPage() {
 
   const { data: memberships } = await supabase
     .from("party_members")
-    .select("role, party_id")
+    .select("party_id")
     .eq("user_id", user.id);
 
   const partyIds = [...new Set((memberships ?? []).map((row) => row.party_id))];
@@ -37,12 +56,32 @@ export default async function DashboardPage() {
       ? await supabase.from("parties").select("*").in("id", partyIds)
       : { data: [] as Party[] };
 
+  const now = Date.now();
   const parties = (partyRows ?? [])
     .slice()
     .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
+  const upcomingParties = parties.filter((party) => new Date(party.starts_at).getTime() >= now);
+  const focusIds = upcomingParties.map((party) => party.id);
 
-  const upcoming =
-    parties.find((party) => new Date(party.starts_at).getTime() >= Date.now()) ?? parties[0] ?? null;
+  let openTasks: OpenTask[] = [];
+  let guests: GuestSignal[] = [];
+  let dishes: MenuDish[] = [];
+
+  if (focusIds.length > 0) {
+    const [{ data: taskRows }, { data: guestRows }, { data: recipeRows }] = await Promise.all([
+      supabase
+        .from("tasks")
+        .select("id, party_id, title, description, start_at, assigned_name")
+        .in("party_id", focusIds)
+        .neq("status", "done")
+        .order("start_at", { ascending: true, nullsFirst: false }),
+      supabase.from("guests").select("id, party_id, name, rsvp_status, allergies").in("party_id", focusIds),
+      supabase.from("recipes").select("id, party_id, allergy_notes").in("party_id", focusIds),
+    ]);
+    openTasks = taskRows ?? [];
+    guests = guestRows ?? [];
+    dishes = recipeRows ?? [];
+  }
 
   const firstName = profile?.name?.trim().split(/\s+/)[0] || "there";
   const greetingHour = new Date().getHours();
@@ -54,56 +93,80 @@ export default async function DashboardPage() {
     day: "numeric",
   }).format(new Date());
 
-  let attending = 0;
-  let recipeCount = 0;
-  let estimate = 0;
-  let menuRecipes: Array<{
-    id: string;
-    title: string;
-    course: string | null;
-    image_url: string | null;
-    prep_minutes: number | null;
-    cook_minutes: number | null;
-  }> = [];
-  let nextTasks: Array<{ id: string; title: string; start_at: string | null; description: string | null }> = [];
+  const partyById = new Map(parties.map((party) => [party.id, party]));
+  const daysUntil = (startsAt: string) => Math.max(0, Math.ceil((new Date(startsAt).getTime() - now) / DAY_MS));
 
-  if (upcoming) {
-    const [{ data: guests }, { data: recipes }, { data: grocery }, { data: tasks }] = await Promise.all([
-      supabase.from("guests").select("rsvp_status").eq("party_id", upcoming.id),
-      supabase
-        .from("recipes")
-        .select("id, title, course, image_url, prep_minutes, cook_minutes")
-        .eq("party_id", upcoming.id)
-        .limit(4),
-      supabase
-        .from("grocery_items")
-        .select("estimated_cost, already_owned")
-        .eq("party_id", upcoming.id),
-      supabase
-        .from("tasks")
-        .select("id, title, start_at, description, status")
-        .eq("party_id", upcoming.id)
-        .neq("status", "done")
-        .order("sort_order")
-        .limit(3),
-    ]);
+  const alerts: Alert[] = [];
+  for (const party of upcomingParties) {
+    const base = `/app/parties/${party.id}`;
+    const partyGuests = guests.filter((guest) => guest.party_id === party.id);
+    const partyDishes = dishes.filter((dish) => dish.party_id === party.id);
+    const daysAway = daysUntil(party.starts_at);
 
-    attending = (guests ?? []).filter((guest) => guest.rsvp_status === "attending").length;
-    recipeCount = (recipes ?? []).length;
-    estimate = (grocery ?? [])
-      .filter((item) => !item.already_owned)
-      .reduce((sum, item) => sum + (item.estimated_cost ?? 0), 0);
-    menuRecipes = recipes ?? [];
-    nextTasks = tasks ?? [];
+    const allergyGuests = partyGuests.filter((guest) => guest.allergies?.trim());
+    if (allergyGuests.length > 0 && partyDishes.length > 0) {
+      const flagged = partyDishes.filter((dish) => dish.allergy_notes?.trim()).length;
+      alerts.push({
+        id: `${party.id}-allergy`,
+        label: "Allergy conflict",
+        title: `${allergyGuests.length} guest${allergyGuests.length === 1 ? "" : "s"} with allergies on ${party.name}`,
+        detail: `${allergyGuests.map((guest) => guest.allergies?.trim()).join(", ")} · ${flagged} dish${flagged === 1 ? "" : "es"} flagged`,
+        href: `${base}/menu`,
+        urgent: true,
+      });
+    }
+
+    const overdue = openTasks.filter(
+      (task) => task.party_id === party.id && task.start_at && new Date(task.start_at).getTime() < now,
+    );
+    if (overdue.length > 0) {
+      alerts.push({
+        id: `${party.id}-timeline`,
+        label: "Timeline slipping",
+        title: `${overdue.length} task${overdue.length === 1 ? "" : "s"} past their start time`,
+        detail: `${party.name} · ${overdue[0].title}`,
+        href: `${base}/timeline`,
+        urgent: true,
+      });
+    }
+
+    const pending = partyGuests.filter((guest) => guest.rsvp_status === "no_response").length;
+    if (pending > 0 && daysAway <= 7) {
+      alerts.push({
+        id: `${party.id}-rsvp`,
+        label: "RSVPs outstanding",
+        title: `${pending} guest${pending === 1 ? "" : "s"} have not replied to ${party.name}`,
+        detail: `${daysAway} day${daysAway === 1 ? "" : "s"} until the table is set`,
+        href: `${base}/guests`,
+        urgent: daysAway <= 3,
+      });
+    }
+
+    if (partyDishes.length === 0 && daysAway <= 14) {
+      alerts.push({
+        id: `${party.id}-menu`,
+        label: "Menu is empty",
+        title: `${party.name} has no dishes yet`,
+        detail: `${daysAway} day${daysAway === 1 ? "" : "s"} away · start with the course structure`,
+        href: `${base}/menu`,
+        urgent: daysAway <= 5,
+      });
+    }
   }
+  alerts.sort((a, b) => Number(b.urgent) - Number(a.urgent));
 
-  const when = upcoming ? formatPartyWhen(upcoming.starts_at, upcoming.timezone) : null;
-  const daysAway = upcoming
-    ? Math.max(0, Math.ceil((new Date(upcoming.starts_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
-    : 0;
-  const partyHref = upcoming ? `/app/parties/${upcoming.id}` : "/app/parties/new";
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const endOfToday = new Date(startOfToday.getTime() + DAY_MS);
+  const todayTasks = openTasks.filter((task) => {
+    if (!task.start_at) return false;
+    const at = new Date(task.start_at).getTime();
+    return at >= startOfToday.getTime() && at < endOfToday.getTime();
+  });
+  const listIsToday = todayTasks.length > 0;
+  const listTasks = (listIsToday ? todayTasks : openTasks).slice(0, 6);
 
-  if (!upcoming) {
+  if (parties.length === 0) {
     return (
       <div className="paper-noise px-4 py-7 md:px-8 md:py-10 xl:px-12 xl:py-12">
         <div className="mx-auto max-w-3xl border border-ink/15 bg-[#f8f4ec] p-8 md:p-12">
@@ -123,6 +186,8 @@ export default async function DashboardPage() {
     );
   }
 
+  const nextParty = upcomingParties[0] ?? null;
+
   return (
     <div className="paper-noise px-4 py-7 md:px-8 md:py-10 xl:px-12 xl:py-12">
       <div className="mx-auto max-w-7xl">
@@ -133,7 +198,9 @@ export default async function DashboardPage() {
               {greeting}, {firstName}.
             </h1>
             <p className="mt-5 max-w-2xl text-sm leading-relaxed text-ink/55">
-              Your next table is {daysAway} day{daysAway === 1 ? "" : "s"} away. Open the party plan to keep momentum.
+              {nextParty
+                ? `Your next table is ${daysUntil(nextParty.starts_at)} day${daysUntil(nextParty.starts_at) === 1 ? "" : "s"} away.`
+                : "Nothing upcoming. Your past parties are in the archive."}
             </p>
           </div>
           <Link href="/app/parties/new" className="btn-primary self-start md:self-auto">
@@ -141,218 +208,187 @@ export default async function DashboardPage() {
           </Link>
         </header>
 
-        <section className="mt-8 grid border border-ink/15 bg-[#f8f4ec] lg:grid-cols-[1.45fr_.72fr]">
-          <Link
-            href={partyHref}
-            className="group relative min-h-[430px] overflow-hidden border-b border-ink/15 lg:min-h-[570px] lg:border-b-0 lg:border-r"
-          >
-            <img
-              src={upcoming.hero_image || "/photos/party-01.webp"}
-              alt="Outdoor dinner party"
-              className="absolute inset-0 h-full w-full object-cover object-[50%_55%] transition duration-700 group-hover:scale-[1.02]"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-ink/55 via-transparent to-transparent" />
-            <div className="absolute bottom-5 left-5 border border-paper/60 bg-paper/92 px-4 py-3 text-ink md:bottom-8 md:left-8">
-              <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-tomato">
-                Next party · {daysAway} days away
-              </p>
-              <p className="mt-1 font-handwritten text-xl">{upcoming.name.toLowerCase()}</p>
+        {alerts.length > 0 ? (
+          <section className="mt-8 border border-tomato/35 bg-[#f8f0e7]">
+            <div className="flex items-center justify-between gap-4 border-b border-tomato/25 px-5 py-4 text-tomato md:px-7">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={17} />
+                <p className="text-[9px] font-bold uppercase tracking-[0.15em]">Needs attention</p>
+              </div>
+              <span className="text-[9px] font-bold uppercase tracking-[0.13em]">
+                {alerts.length} item{alerts.length === 1 ? "" : "s"}
+              </span>
             </div>
-          </Link>
-
-          <div className="flex flex-col p-6 md:p-8 lg:p-9">
-            <div className="flex items-start justify-between gap-4 border-b border-ink/15 pb-6">
-              <div>
-                <p className="eyebrow">Upcoming</p>
-                <h2 className="mt-3 font-editorial text-5xl font-semibold leading-[0.82] tracking-[-0.04em] text-tomato md:text-6xl">
-                  {upcoming.name}
-                </h2>
-              </div>
-              <ArrowRight size={22} className="mt-1 text-tomato" />
+            <div className="divide-y divide-tomato/15">
+              {alerts.slice(0, 5).map((alert) => (
+                <Link
+                  key={alert.id}
+                  href={alert.href}
+                  className="group grid gap-2 px-5 py-5 md:grid-cols-[150px_1fr_auto] md:items-center md:gap-5 md:px-7"
+                >
+                  <span
+                    className={`text-[9px] font-bold uppercase tracking-[0.13em] ${alert.urgent ? "text-tomato" : "text-ink/45"}`}
+                  >
+                    {alert.label}
+                  </span>
+                  <div>
+                    <p className="font-editorial text-2xl font-semibold leading-none">{alert.title}</p>
+                    <p className="mt-2 text-xs text-ink/55">{alert.detail}</p>
+                  </div>
+                  <ArrowRight
+                    size={16}
+                    className="text-ink/28 transition group-hover:translate-x-1 group-hover:text-tomato md:justify-self-end"
+                  />
+                </Link>
+              ))}
             </div>
+          </section>
+        ) : null}
 
-            <dl className="divide-y divide-ink/12 border-b border-ink/15">
-              <div className="grid grid-cols-[90px_1fr] py-4 text-xs">
-                <dt className="font-bold uppercase tracking-[0.12em] text-ink/42">Date</dt>
-                <dd className="font-semibold">
-                  {when?.date} · {when?.time}
-                </dd>
-              </div>
-              <div className="grid grid-cols-[90px_1fr] py-4 text-xs">
-                <dt className="font-bold uppercase tracking-[0.12em] text-ink/42">Place</dt>
-                <dd className="font-semibold">{upcoming.location || "Location TBD"}</dd>
-              </div>
-              <div className="grid grid-cols-[90px_1fr] py-4 text-xs">
-                <dt className="font-bold uppercase tracking-[0.12em] text-ink/42">Style</dt>
-                <dd className="font-semibold">
-                  {[upcoming.service_style, upcoming.cuisine].filter(Boolean).join(" · ") || "Open style"}
-                </dd>
-              </div>
-            </dl>
-
-            <div className="grid grid-cols-3 border-b border-ink/15 py-6">
-              <div className="border-r border-ink/15 pr-4">
-                <p className="editorial-number">{attending}</p>
-                <p className="mt-2 text-[9px] font-bold uppercase tracking-[0.13em] text-ink/42">Attending</p>
-              </div>
-              <div className="border-r border-ink/15 px-4">
-                <p className="editorial-number">{recipeCount}</p>
-                <p className="mt-2 text-[9px] font-bold uppercase tracking-[0.13em] text-ink/42">Dishes</p>
-              </div>
-              <div className="pl-4">
-                <p className="editorial-number">${Math.round(estimate)}</p>
-                <p className="mt-2 text-[9px] font-bold uppercase tracking-[0.13em] text-ink/42">Estimated</p>
-              </div>
+        <section className="mt-12">
+          <div className="flex items-end justify-between gap-4 border-b border-ink/20 pb-4">
+            <div>
+              <p className="eyebrow">On the calendar</p>
+              <h2 className="mt-2 font-editorial text-4xl font-semibold leading-none md:text-5xl">Upcoming parties</h2>
             </div>
-
-            <div className="mt-auto pt-6">
-              <Link href={partyHref} className="editorial-link text-tomato">
-                Open party plan <ArrowRight size={13} />
-              </Link>
-            </div>
+            <Link href="/app/parties" className="editorial-link text-tomato">
+              All parties <ArrowRight size={12} />
+            </Link>
           </div>
+
+          {upcomingParties.length === 0 ? (
+            <p className="py-8 text-sm text-ink/45">
+              No upcoming parties.{" "}
+              <Link href="/app/parties" className="font-semibold text-tomato">
+                Browse the archive
+              </Link>{" "}
+              or create the next one.
+            </p>
+          ) : (
+            <div className="grid gap-5 pt-6 md:grid-cols-2 xl:grid-cols-3">
+              {upcomingParties.slice(0, 3).map((party) => {
+                const when = formatPartyWhen(party.starts_at, party.timezone);
+                const daysAway = daysUntil(party.starts_at);
+                const attending = guests.filter(
+                  (guest) => guest.party_id === party.id && guest.rsvp_status === "attending",
+                ).length;
+                const dishCount = dishes.filter((dish) => dish.party_id === party.id).length;
+                return (
+                  <Link
+                    key={party.id}
+                    href={`/app/parties/${party.id}`}
+                    className="group flex flex-col border border-ink/15 bg-[#f8f4ec] p-3"
+                  >
+                    <div className="h-44 overflow-hidden md:h-52">
+                      <img
+                        src={party.hero_image || "/photos/party-01.webp"}
+                        alt=""
+                        className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
+                      />
+                    </div>
+                    <div className="flex flex-1 flex-col px-1 pb-1 pt-4">
+                      <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-tomato">
+                        {daysAway} day{daysAway === 1 ? "" : "s"} away
+                      </p>
+                      <h3 className="mt-2 font-editorial text-3xl font-semibold leading-[0.92]">{party.name}</h3>
+                      <p className="mt-3 text-xs text-ink/52">
+                        {when.date} · {when.time}
+                      </p>
+                      <p className="mt-1 text-xs text-ink/52">{party.location || "Location TBD"}</p>
+                      <div className="mt-5 flex items-center justify-between border-t border-ink/15 pt-4 text-[9px] font-bold uppercase tracking-[0.12em] text-ink/45">
+                        <span>
+                          {attending} attending · {dishCount} dish{dishCount === 1 ? "" : "es"}
+                        </span>
+                        <ArrowRight
+                          size={15}
+                          className="text-ink/28 transition group-hover:translate-x-1 group-hover:text-tomato"
+                        />
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
         </section>
 
-        <section className="mt-10 grid gap-7 lg:grid-cols-[1.35fr_.65fr]">
+        <section className="mt-14 grid gap-8 lg:grid-cols-[1.35fr_.65fr]">
           <div>
             <div className="flex items-end justify-between gap-4 border-b border-ink/20 pb-4">
               <div>
-                <p className="eyebrow">Today’s kitchen</p>
-                <h2 className="mt-2 font-editorial text-4xl font-semibold leading-none md:text-5xl">What’s next</h2>
+                <p className="eyebrow">{listIsToday ? "Today’s kitchen" : "Nothing scheduled today"}</p>
+                <h2 className="mt-2 font-editorial text-4xl font-semibold leading-none md:text-5xl">
+                  {listIsToday ? "Today’s list" : "What’s next"}
+                </h2>
               </div>
-              <Link href={`${partyHref}/timeline`} className="editorial-link text-tomato">
-                Full timeline <ArrowRight size={12} />
-              </Link>
+              {nextParty ? (
+                <Link href={`/app/parties/${nextParty.id}/timeline`} className="editorial-link text-tomato">
+                  Full timeline <ArrowRight size={12} />
+                </Link>
+              ) : null}
             </div>
 
             <div>
-              {nextTasks.length === 0 ? (
-                <p className="py-6 text-sm text-ink/45">No open tasks yet for this party.</p>
+              {listTasks.length === 0 ? (
+                <p className="py-6 text-sm text-ink/45">No open tasks across your upcoming parties.</p>
               ) : (
-                nextTasks.map((task, index) => {
+                listTasks.map((task, index) => {
                   const icons = [CalendarDays, ShoppingBasket, Clock3] as const;
                   const Icon = icons[index % icons.length];
+                  const taskParty = partyById.get(task.party_id);
                   const timeLabel = task.start_at
-                    ? formatPartyWhen(task.start_at, upcoming.timezone).time
+                    ? formatPartyWhen(task.start_at, taskParty?.timezone ?? undefined).time
                     : "Soon";
                   return (
-                    <article
+                    <Link
                       key={task.id}
+                      href={`/app/parties/${task.party_id}/timeline`}
                       className="grid gap-4 border-b border-ink/15 py-5 sm:grid-cols-[44px_1fr_auto] sm:items-center"
                     >
                       <span className="font-editorial text-3xl text-tomato">0{index + 1}</span>
                       <div>
                         <h3 className="font-editorial text-2xl font-semibold leading-none">{task.title}</h3>
-                        <p className="mt-2 text-xs text-ink/52">{task.description || "Keep the plan moving."}</p>
+                        <p className="mt-2 text-xs text-ink/52">
+                          {taskParty ? `${taskParty.name} · ` : ""}
+                          {task.assigned_name || task.description || "Keep the plan moving."}
+                        </p>
                       </div>
                       <div className="flex items-center gap-3 sm:justify-end">
                         <Icon size={16} className="text-ink/35" />
-                        <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-ink/45">{timeLabel}</span>
+                        <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-ink/45">
+                          {timeLabel}
+                        </span>
                       </div>
-                    </article>
+                    </Link>
                   );
                 })
               )}
             </div>
           </div>
 
-          <aside className="border border-tomato/35 bg-[#f8f0e7] p-6 md:p-7">
-            <div className="flex items-center justify-between gap-4 text-tomato">
-              <p className="text-[9px] font-bold uppercase tracking-[0.15em]">Needs attention</p>
-              <AlertTriangle size={17} />
-            </div>
-            <h3 className="mt-8 font-editorial text-4xl font-semibold leading-[0.9]">
-              Keep the menu and guest list in sync.
-            </h3>
-            <p className="mt-5 text-sm leading-relaxed text-ink/55">
-              Review allergy notes and RSVPs before invitations go out.
+          <aside className="border border-ink/15 bg-[#f8f4ec] p-6 md:p-7">
+            <p className="eyebrow">Across your parties</p>
+            <dl className="mt-6 divide-y divide-ink/12 border-y border-ink/15">
+              <div className="flex items-baseline justify-between py-4">
+                <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-ink/45">Upcoming</dt>
+                <dd className="font-editorial text-3xl font-semibold leading-none">{upcomingParties.length}</dd>
+              </div>
+              <div className="flex items-baseline justify-between py-4">
+                <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-ink/45">Open tasks</dt>
+                <dd className="font-editorial text-3xl font-semibold leading-none">{openTasks.length}</dd>
+              </div>
+              <div className="flex items-baseline justify-between py-4">
+                <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-ink/45">Guests invited</dt>
+                <dd className="font-editorial text-3xl font-semibold leading-none">{guests.length}</dd>
+              </div>
+            </dl>
+            <p className="mt-6 font-handwritten text-2xl leading-[0.95] text-ink/62">
+              the plan is only here so you can sit down and eat with everyone else
             </p>
-            <Link href={`${partyHref}/menu`} className="editorial-link mt-8 text-tomato">
-              Review the menu <ArrowRight size={13} />
+            <Link href="/app/parties" className="btn-secondary mt-6 w-full">
+              See all parties
             </Link>
           </aside>
-        </section>
-
-        <section className="mt-14 grid gap-10 lg:grid-cols-[1fr_.72fr]">
-          <div>
-            <div className="flex items-end justify-between border-b border-ink/20 pb-4">
-              <div>
-                <p className="eyebrow">Cookbook pull</p>
-                <h2 className="mt-2 font-editorial text-4xl font-semibold leading-none md:text-5xl">On the menu</h2>
-              </div>
-              <Link href={`${partyHref}/menu`} className="editorial-link text-tomato">
-                Edit menu <ArrowRight size={12} />
-              </Link>
-            </div>
-
-            <div className="grid border-l border-t border-ink/15 sm:grid-cols-2">
-              {menuRecipes.length === 0 ? (
-                <div className="border-b border-r border-ink/15 bg-[#f8f4ec] p-6 sm:col-span-2">
-                  <p className="text-sm text-ink/50">No recipes on this party yet.</p>
-                </div>
-              ) : (
-                menuRecipes.map((recipe, index) => (
-                  <Link
-                    href={`${partyHref}/menu`}
-                    key={recipe.id}
-                    className="group border-b border-r border-ink/15 bg-[#f8f4ec] p-3"
-                  >
-                    <div className="h-44 overflow-hidden md:h-52">
-                      <img
-                        src={recipe.image_url || "/photos/party-04.webp"}
-                        alt=""
-                        className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]"
-                      />
-                    </div>
-                    <div className="flex items-start justify-between gap-4 px-1 pb-2 pt-4">
-                      <div>
-                        <p className="text-[8px] font-bold uppercase tracking-[0.15em] text-tomato">
-                          {recipe.course || "Course"}
-                        </p>
-                        <h3 className="mt-2 font-editorial text-2xl font-semibold leading-[0.93]">{recipe.title}</h3>
-                      </div>
-                      <span className="font-editorial text-xl text-ink/28">0{index + 1}</span>
-                    </div>
-                  </Link>
-                ))
-              )}
-            </div>
-          </div>
-
-          <div className="relative min-h-[520px]">
-            <PhotoFrame
-              src="/photos/party-08.webp"
-              alt="Friends laughing at a candlelit table"
-              className="absolute inset-x-0 top-0 h-[88%] rotate-[1deg]"
-              label="this is the part you’re planning for"
-            />
-            <div className="absolute bottom-0 left-4 max-w-[250px] -rotate-[2deg] border border-ink/20 bg-paper p-5 shadow-card">
-              <Sparkles size={16} className="text-tomato" />
-              <p className="mt-3 font-handwritten text-2xl leading-[0.9]">
-                The timeline is there so you do not spend the whole night in the kitchen.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <section className="mt-14 grid border-y border-ink/20 md:grid-cols-3">
-          {[
-            [Users, `${attending} guests attending`, "RSVPs update the plan as they come in."],
-            [Check, `${recipeCount} dishes planned`, "Scale the menu when the headcount shifts."],
-            [Sparkles, `$${Math.round(estimate)} estimated`, "Pantry marks lower the shopping total."],
-          ].map(([Icon, title, copy], index) => {
-            const StatusIcon = Icon as typeof Users;
-            return (
-              <article
-                key={title as string}
-                className={`py-6 md:px-6 ${index < 2 ? "border-b border-ink/15 md:border-b-0 md:border-r" : ""}`}
-              >
-                <StatusIcon size={17} className="text-tomato" />
-                <h3 className="mt-5 font-editorial text-2xl font-semibold leading-none">{title as string}</h3>
-                <p className="mt-2 text-xs text-ink/48">{copy as string}</p>
-              </article>
-            );
-          })}
         </section>
       </div>
     </div>

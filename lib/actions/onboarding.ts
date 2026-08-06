@@ -43,13 +43,5 @@ export async function completeOnboarding(input: {
     }
   }
 
-  const { error: seedError } = await supabase.rpc("seed_demo_party_for_user", {
-    p_user_id: user.id,
-  });
-
-  if (seedError) {
-    return { error: seedError.message };
-  }
-
   redirect("/app");
 }

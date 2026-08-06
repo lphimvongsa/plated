@@ -57,21 +57,10 @@ export default async function MenuPage({ params }: { params: Promise<{ partyId: 
     })
     .filter((recipe): recipe is NonNullable<typeof recipe> => Boolean(recipe));
 
-  const { data: invite } = await supabase
-    .from("invites")
-    .select("token")
-    .eq("party_id", partyId)
-    .is("revoked_at", null)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-
   return (
     <MenuBuilder
-      partyId={partyId}
       serviceStyle={party.service_style}
       planningGuests={party.planning_guest_count}
-      previewToken={invite?.token ?? null}
       initialRecipes={recipes}
     />
   );

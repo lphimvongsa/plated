@@ -33,12 +33,7 @@ export function CostsPanel({
     <div className="space-y-8">
       <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="eyebrow">Estimated and actual spend</p>
-          <h2 className="mt-2 font-editorial text-5xl font-semibold">Know what the table costs.</h2>
-          <p className="mt-4 max-w-2xl text-sm leading-relaxed text-ink/55">
-            Estimates reflect scaled ingredient quantities and drop as pantry items are marked. Receipt scans replace
-            estimates with actual line-item spend.
-          </p>
+          <h2 className="font-editorial text-5xl font-semibold">Cost Metrics</h2>
         </div>
         <button
           className="btn-primary"

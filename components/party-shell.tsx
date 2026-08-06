@@ -1,7 +1,7 @@
 "use client";
 
 import { formatPartyWhen } from "@/lib/calendar";
-import { ChevronLeft, ExternalLink, MoreHorizontal, Users } from "lucide-react";
+import { ChevronLeft, ExternalLink, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ReactNode } from "react";
@@ -44,7 +44,7 @@ export function PartyShell({ party, collaborators, previewToken, children }: Par
     <div>
       <div className="border-b border-ink/15 bg-[#f7f3eb] px-4 py-6 md:px-8 xl:px-12">
         <div className="mx-auto max-w-7xl">
-          <Link href="/app" className="editorial-link text-ink/45 hover:text-tomato">
+          <Link href="/app/parties" className="editorial-link text-ink/45 hover:text-tomato">
             <ChevronLeft size={13} /> All parties
           </Link>
 
@@ -87,9 +87,6 @@ export function PartyShell({ party, collaborators, previewToken, children }: Par
                   <ExternalLink size={15} /> Preview
                 </Link>
               )}
-              <button className="btn-icon" aria-label="More party actions">
-                <MoreHorizontal size={17} />
-              </button>
             </div>
           </div>
         </div>

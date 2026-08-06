@@ -37,17 +37,19 @@ export default function LandingPage() {
                 <span>Est. 2026</span>
               </div>
 
-              <h1 className="mt-1 text-center font-editorial text-[5rem] font-semibold italic leading-[0.78] tracking-[-0.075em] text-tomato sm:text-[7.5rem] lg:text-[10.2rem] xl:text-[12rem]">
-                plated.
-              </h1>
+              <div className="relative mt-1">
+                <h1 className="relative z-10 text-center font-editorial text-[5rem] font-semibold italic leading-[0.78] tracking-[-0.075em] text-tomato sm:text-[7.5rem] lg:text-[10.2rem] xl:text-[12rem]">
+                  plated.
+                </h1>
 
-              <div className="relative mt-4 h-[330px] overflow-hidden md:h-[460px] lg:h-[500px]">
-                <img
-                  src="/photos/party-01.webp"
-                  alt="An outdoor dinner party beneath string lights"
-                  className="h-full w-full object-cover object-[50%_56%]"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-ink/15 via-transparent to-transparent" />
+                <div className="relative -mt-6 h-[330px] overflow-hidden md:-mt-10 md:h-[460px] lg:h-[500px]">
+                  <img
+                    src="/photos/party-01.webp"
+                    alt="An outdoor dinner party beneath string lights"
+                    className="h-full w-full object-cover object-[50%_56%]"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-ink/15 via-transparent to-transparent" />
+                </div>
               </div>
 
               <div className="grid gap-3 border-t border-ink/15 pt-3 md:grid-cols-[1fr_auto_1fr] md:items-center">

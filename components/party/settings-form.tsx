@@ -26,12 +26,7 @@ export function PartySettingsForm({ party }: { party: SettingsParty }) {
   return (
     <div className="space-y-8">
       <section>
-        <p className="eyebrow">Party settings</p>
-        <h2 className="mt-2 font-editorial text-5xl font-semibold">Details, access, and defaults.</h2>
-        <p className="mt-4 max-w-2xl text-sm text-ink/55">
-          Changes to date, time, or guest count can trigger a fresh recipe scale, cost estimate, timeline, and assignment
-          pass.
-        </p>
+        <h2 className="font-editorial text-5xl font-semibold">Party Settings</h2>
       </section>
       {message ? (
         <div className="rounded-2xl border border-olive/25 bg-olive/8 p-4 text-sm font-semibold text-olive">{message}</div>

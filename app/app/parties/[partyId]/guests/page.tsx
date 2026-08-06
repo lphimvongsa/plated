@@ -1,7 +1,7 @@
 import { AddGuestForm, CopyInviteLink, InviteActions } from "@/components/party/guest-actions";
 import { formatRsvpStatus, initialsFromName } from "@/lib/rsvp";
 import { createClient } from "@/lib/supabase/server";
-import { AlertTriangle, Check, Users } from "lucide-react";
+import { AlertTriangle, Check, Users, X } from "lucide-react";
 import { notFound } from "next/navigation";
 
 export default async function GuestsPage({ params }: { params: Promise<{ partyId: string }> }) {
@@ -44,12 +44,7 @@ export default async function GuestsPage({ params }: { params: Promise<{ partyId
     <div className="space-y-8">
       <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="eyebrow">Guests and invitations</p>
-          <h2 className="mt-2 font-editorial text-5xl font-semibold">Invite them into the menu.</h2>
-          <p className="mt-4 max-w-2xl text-sm leading-relaxed text-ink/55">
-            Guests see the dinner before they reply. New allergies or headcount changes feed back into recipes, shopping,
-            cost, and timeline.
-          </p>
+          <h2 className="font-editorial text-5xl font-semibold">Guests and Invitations</h2>
         </div>
         <AddGuestForm partyId={partyId} />
       </section>
@@ -57,31 +52,28 @@ export default async function GuestsPage({ params }: { params: Promise<{ partyId
         <article className="card p-5">
           <p className="eyebrow">Attending</p>
           <p className="mt-3 font-editorial text-4xl font-semibold">{attending}</p>
-          <p className="mt-2 text-xs text-ink/45">confirmed guests</p>
         </article>
         <article className="card p-5">
           <p className="eyebrow">Maybe</p>
           <p className="mt-3 font-editorial text-4xl font-semibold">{maybe}</p>
-          <p className="mt-2 text-xs text-ink/45">including plus-ones</p>
         </article>
         <article className="card p-5">
           <p className="eyebrow">Awaiting reply</p>
           <p className="mt-3 font-editorial text-4xl font-semibold">{pending}</p>
-          <p className="mt-2 text-xs text-ink/45">no response yet</p>
         </article>
         <article className="rounded-[1.75rem] bg-tomato p-5 text-paper">
           <p className="eyebrow !text-paper/55">Allergy profiles</p>
           <p className="mt-3 font-editorial text-4xl font-semibold">{allergies}</p>
-          <p className="mt-2 text-xs text-paper/65">need menu attention</p>
         </article>
       </section>
       <section className="grid gap-6 lg:grid-cols-[1fr_300px]">
         <div>
           <div className="overflow-hidden rounded-[1.75rem] border border-ink/10 bg-[#f8f2e8] shadow-card">
-            <div className="hidden grid-cols-[1.1fr_.7fr_.7fr_.9fr_auto] gap-4 border-b border-ink/10 px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-ink/40 md:grid">
+            <div className="hidden grid-cols-[1.1fr_8.75rem_.7fr_4.5rem_.9fr_auto] gap-4 border-b border-ink/10 px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-ink/40 md:grid">
               <span>Guest</span>
               <span>Status</span>
               <span>Dietary</span>
+              <span>Plus one</span>
               <span>Invite link</span>
               <span className="text-right">Actions</span>
             </div>
@@ -94,10 +86,11 @@ export default async function GuestsPage({ params }: { params: Promise<{ partyId
                   const invite = guest.invites.find((row) => !row.revoked_at) ?? guest.invites[0];
                   const dietary = guest.allergies?.trim() || guest.dietary_preference?.trim() || "None";
                   const hasAllergy = Boolean(guest.allergies?.trim());
+                  const hasPlusOne = guest.plus_one_count > 0;
                   return (
                     <div
                       key={guest.id}
-                      className="grid gap-4 p-5 md:grid-cols-[1.1fr_.7fr_.7fr_.9fr_auto] md:items-center"
+                      className="grid gap-4 p-5 md:grid-cols-[1.1fr_8.75rem_.7fr_4.5rem_.9fr_auto] md:items-center"
                     >
                       <div className="flex items-center gap-3">
                         <div
@@ -112,9 +105,8 @@ export default async function GuestsPage({ params }: { params: Promise<{ partyId
                       </div>
                       <div>
                         <span
-                          className={`chip ${status === "Attending" ? "border-olive/30 bg-olive/10 text-olive" : status === "Maybe" ? "border-gold/40 bg-gold/10" : status === "Not attending" ? "bg-ink/5 text-ink/40" : "border-tomato/20 bg-tomato/5 text-tomato"}`}
+                          className={`chip h-[29px] w-full justify-center ${status === "Attending" ? "border-olive/30 bg-olive/10 text-olive" : status === "Maybe" ? "border-gold/40 bg-gold/10" : status === "Not attending" ? "bg-ink/5 text-ink/40" : "border-tomato/20 bg-tomato/5 text-tomato"}`}
                         >
-                          {status === "Attending" ? <Check size={12} /> : null}
                           {status}
                         </span>
                       </div>
@@ -126,11 +118,13 @@ export default async function GuestsPage({ params }: { params: Promise<{ partyId
                         ) : (
                           <span className="text-xs text-ink/40">{dietary}</span>
                         )}
-                        {guest.plus_one_count > 0 ? (
-                          <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-ink/40">
-                            +{guest.plus_one_count}
-                          </p>
-                        ) : null}
+                      </div>
+                      <div className="flex items-center md:justify-center" aria-label={hasPlusOne ? "Plus one" : "No plus one"}>
+                        {hasPlusOne ? (
+                          <Check size={16} className="text-olive" strokeWidth={2.25} />
+                        ) : (
+                          <X size={16} className="text-ink/30" strokeWidth={2.25} />
+                        )}
                       </div>
                       <div className="min-w-0">
                         {invite && !invite.revoked_at ? (

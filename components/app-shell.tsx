@@ -1,15 +1,15 @@
 "use client";
 
 import { Brand } from "@/components/brand";
-import { Bell, BookOpen, CalendarDays, ChefHat, Home, Menu, Plus, Settings, X } from "lucide-react";
+import { Bell, BookOpen, CalendarDays, ChefHat, Home, Plus, Settings } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ReactNode, useState } from "react";
+import { ReactNode } from "react";
 
 const nav = [
   { href: "/app", label: "Home", icon: Home, match: (pathname: string) => pathname === "/app" },
   {
-    href: "/app",
+    href: "/app/parties",
     label: "Parties",
     icon: CalendarDays,
     match: (pathname: string) => pathname.startsWith("/app/parties"),
@@ -36,21 +36,12 @@ const nav = [
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
     <div className="editorial-app min-h-screen bg-paper text-ink">
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-[228px] border-r border-ink/15 bg-[#eee8dc] lg:flex lg:flex-col">
         <div className="border-b border-ink/15 px-6 py-7">
-          <div className="flex items-start justify-between gap-3">
-            <Brand compact />
-            <span className="mt-1 text-[8px] font-bold uppercase tracking-[0.18em] text-ink/38">prototype</span>
-          </div>
-          <p className="mt-4 max-w-[160px] font-editorial text-[1.05rem] leading-[1.05] text-ink/58">
-            Dinner parties,
-            <br />
-            planned beautifully.
-          </p>
+          <Brand compact />
         </div>
 
         <div className="px-6 py-6">
@@ -92,7 +83,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
 
         <div className="mt-auto border-t border-ink/15 px-6 py-5">
-          <div className="flex items-center gap-3">
+          <Link href="/app/settings" className="flex items-center gap-3 transition hover:opacity-80">
             <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-ink/25 bg-paper font-editorial text-sm font-semibold">
               ··
             </div>
@@ -100,60 +91,13 @@ export function AppShell({ children }: { children: ReactNode }) {
               <p className="truncate text-xs font-semibold">Host account</p>
               <p className="mt-0.5 truncate text-[9px] font-bold uppercase tracking-[0.12em] text-ink/38">Signed in</p>
             </div>
-          </div>
+          </Link>
         </div>
       </aside>
 
-      <header className="sticky top-0 z-30 flex h-[62px] items-center justify-between border-b border-ink/15 bg-paper/95 px-4 backdrop-blur lg:hidden">
-        <Brand compact />
-        <button className="btn-icon" onClick={() => setMobileOpen(true)} aria-label="Open navigation">
-          <Menu size={18} />
-        </button>
+      <header className="sticky top-0 z-30 flex h-[62px] items-center border-b border-tomato bg-tomato px-4 lg:hidden">
+        <Brand compact light />
       </header>
-
-      {mobileOpen ? (
-        <div
-          className="fixed inset-0 z-50 bg-ink/45 backdrop-blur-sm lg:hidden"
-          onMouseDown={(event) => event.currentTarget === event.target && setMobileOpen(false)}
-        >
-          <aside className="h-full w-[86%] max-w-sm border-r border-ink/15 bg-paper shadow-paper">
-            <div className="flex items-center justify-between border-b border-ink/15 px-5 py-5">
-              <Brand compact />
-              <button className="btn-icon" onClick={() => setMobileOpen(false)} aria-label="Close navigation">
-                <X size={18} />
-              </button>
-            </div>
-            <div className="p-5">
-              <Link
-                href="/app/parties/new"
-                onClick={() => setMobileOpen(false)}
-                className="btn-primary w-full justify-between"
-              >
-                New party <Plus size={15} />
-              </Link>
-            </div>
-            <nav className="border-y border-ink/15">
-              {nav.map(({ href, label, icon: Icon, match }) => {
-                const active = match(pathname);
-                return (
-                  <Link
-                    key={label}
-                    href={href}
-                    onClick={() => setMobileOpen(false)}
-                    className={`flex items-center gap-3 border-b border-ink/10 px-6 py-4 text-[11px] font-bold uppercase tracking-[0.12em] last:border-b-0 ${
-                      active
-                        ? "border-l-[3px] border-l-tomato text-tomato"
-                        : "border-l-[3px] border-l-transparent text-ink/62"
-                    }`}
-                  >
-                    <Icon size={16} /> {label}
-                  </Link>
-                );
-              })}
-            </nav>
-          </aside>
-        </div>
-      ) : null}
 
       <main className="pb-[76px] lg:ml-[228px] lg:pb-0">{children}</main>
 

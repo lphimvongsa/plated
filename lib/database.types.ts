@@ -440,10 +440,6 @@ export type Database = {
         };
         Returns: Json;
       };
-      seed_demo_party_for_user: {
-        Args: { p_user_id: string };
-        Returns: string;
-      };
       cleanup_expired_parties: {
         Args: Record<string, never>;
         Returns: number;

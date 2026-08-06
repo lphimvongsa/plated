@@ -27,16 +27,12 @@ const analyses: Analysis[] = [
 ];
 
 export function MenuBuilder({
-  partyId,
   serviceStyle,
   planningGuests,
-  previewToken,
   initialRecipes,
 }: {
-  partyId: string;
   serviceStyle: string | null;
   planningGuests: number;
-  previewToken: string | null;
   initialRecipes: MenuRecipe[];
 }) {
   const [recipes, setRecipes] = useState(initialRecipes);
@@ -64,17 +60,11 @@ export function MenuBuilder({
     [recipes, guests],
   );
 
-  const previewHref = previewToken ? `/invite/${previewToken}` : `/app/parties/${partyId}/guests`;
-
   return (
     <div className="space-y-8">
       <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="eyebrow">Menu builder</p>
-          <h2 className="mt-2 font-editorial text-5xl font-semibold leading-none">Build the meal first.</h2>
-          <p className="mt-4 max-w-2xl text-sm leading-relaxed text-ink/55">
-            This guest-facing menu will appear on the invitation. Scale it now, then plated. will adjust as RSVPs arrive.
-          </p>
+          <h2 className="font-editorial text-5xl font-semibold leading-none">Menu Planner</h2>
         </div>
         <div className="flex flex-wrap gap-2">
           <button className="btn-secondary" onClick={() => setAnalysisOpen(true)}>
@@ -86,43 +76,58 @@ export function MenuBuilder({
         </div>
       </section>
 
-      <section className="card grid gap-4 p-5 md:grid-cols-[1fr_auto_auto] md:items-center">
-        <div>
-          <p className="eyebrow">Menu structure</p>
-          <button className="mt-2 flex items-center gap-2 font-editorial text-2xl font-semibold">
-            {serviceStyle || "Family style"} <ChevronDown size={17} />
-          </button>
-        </div>
-        <label className="block">
-          <span className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-ink/45">Planning servings</span>
-          <div className="flex items-center rounded-full border border-ink/15 bg-white/50 p-1">
-            <button onClick={() => setGuests(Math.max(2, guests - 1))} className="h-9 w-9 rounded-full hover:bg-ink/5">
-              −
-            </button>
-            <span className="min-w-20 text-center text-sm font-bold">{guests} guests</span>
-            <button onClick={() => setGuests(guests + 1)} className="h-9 w-9 rounded-full hover:bg-ink/5">
-              +
+      <section className="card overflow-x-auto p-5">
+        <div className="flex w-full min-w-max items-start justify-between gap-6">
+          <div className="grid shrink-0 grid-rows-[1rem_2.75rem] gap-2">
+            <p className="eyebrow leading-none">Menu structure</p>
+            <button className="flex h-full items-center gap-2 font-editorial text-2xl font-semibold leading-none">
+              {serviceStyle || "Family style"} <ChevronDown size={17} />
             </button>
           </div>
-        </label>
-        <label className="block">
-          <span className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-ink/45">Measurements</span>
-          <div className="flex rounded-full border border-ink/15 bg-white/50 p-1">
-            {(["US", "Metric"] as const).map((name) => (
-              <button
-                key={name}
-                onClick={() => setUnit(name)}
-                className={`rounded-full px-4 py-2 text-xs font-bold ${unit === name ? "bg-ink text-paper" : "text-ink/50"}`}
-              >
-                {name}
+          <label className="grid shrink-0 grid-rows-[1rem_2.75rem] gap-2">
+            <span className="eyebrow leading-none">Planning servings</span>
+            <div className="flex h-full items-center rounded-full border border-ink/15 bg-white/50 p-1">
+              <button onClick={() => setGuests(Math.max(2, guests - 1))} className="h-9 w-9 rounded-full hover:bg-ink/5">
+                −
               </button>
-            ))}
+              <span className="min-w-20 text-center text-sm font-bold">{guests} guests</span>
+              <button onClick={() => setGuests(guests + 1)} className="h-9 w-9 rounded-full hover:bg-ink/5">
+                +
+              </button>
+            </div>
+          </label>
+          <label className="grid shrink-0 grid-rows-[1rem_2.75rem] gap-2">
+            <span className="eyebrow leading-none">Measurements</span>
+            <div className="flex h-full items-center rounded-full border border-ink/15 bg-white/50 p-1">
+              {(["US", "Metric"] as const).map((name) => (
+                <button
+                  key={name}
+                  onClick={() => setUnit(name)}
+                  className={`rounded-full px-4 py-2 text-xs font-bold ${unit === name ? "bg-ink text-paper" : "text-ink/50"}`}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+          </label>
+          <div className="grid shrink-0 grid-rows-[1rem_2.75rem] gap-2">
+            <p className="eyebrow leading-none">Dishes</p>
+            <p className="flex h-full items-center font-editorial text-2xl font-semibold leading-none">{recipes.length}</p>
           </div>
-        </label>
+          <div className="grid shrink-0 grid-rows-[1rem_2.75rem] gap-2">
+            <p className="eyebrow leading-none">Estimated cost</p>
+            <p className="flex h-full items-center font-editorial text-2xl font-semibold leading-none">${estimated.toFixed(2)}</p>
+          </div>
+          <div className="grid shrink-0 grid-rows-[1rem_2.75rem] gap-2">
+            <p className="eyebrow leading-none">Per guest</p>
+            <p className="flex h-full items-center font-editorial text-2xl font-semibold leading-none">
+              ${guests ? (estimated / guests).toFixed(2) : "0.00"}
+            </p>
+          </div>
+        </div>
       </section>
 
-      <section className="grid gap-6 lg:grid-cols-[1fr_300px]">
-        <div className="space-y-4">
+      <section className="space-y-4">
           {recipes.length === 0 ? (
             <div className="card p-8 text-center">
               <p className="font-editorial text-3xl font-semibold">No dishes on the menu yet.</p>
@@ -224,49 +229,6 @@ export function MenuBuilder({
           >
             <Plus size={17} /> Add another course or dish
           </button>
-        </div>
-
-        <aside className="space-y-4">
-          <article className="card p-5">
-            <p className="eyebrow">Menu snapshot</p>
-            <div className="mt-5 space-y-4">
-              <div className="flex justify-between text-sm">
-                <span className="text-ink/50">Dishes</span>
-                <strong>{recipes.length}</strong>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-ink/50">Estimated cost</span>
-                <strong>${estimated.toFixed(2)}</strong>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-ink/50">Per guest</span>
-                <strong>${guests ? (estimated / guests).toFixed(2) : "0.00"}</strong>
-              </div>
-            </div>
-          </article>
-          <article className="rounded-[1.75rem] bg-ink p-5 text-paper">
-            <Sparkles className="text-orange" size={20} />
-            <h3 className="mt-5 font-editorial text-3xl font-semibold">Kitchen read</h3>
-            <p className="mt-3 text-sm leading-relaxed text-paper/60">
-              Review timing and allergy notes once the menu is set.
-            </p>
-            <button className="mt-5 text-sm font-bold text-orange" onClick={() => setAnalysisOpen(true)}>
-              Open full analysis →
-            </button>
-          </article>
-          <article className="card overflow-hidden">
-            <div className="h-40 overflow-hidden">
-              <img src="/photos/party-09.webp" alt="Guest-facing table preview" className="h-full w-full object-cover" />
-            </div>
-            <div className="p-5">
-              <p className="font-handwritten text-sm text-tomato">Guest preview</p>
-              <p className="mt-2 font-editorial text-2xl font-semibold">See how the menu looks on your invite.</p>
-              <a href={previewHref} target={previewToken ? "_blank" : undefined} className="btn-secondary mt-5 w-full">
-                Preview invitation
-              </a>
-            </div>
-          </article>
-        </aside>
       </section>
 
       <Modal open={analysisOpen} onClose={() => setAnalysisOpen(false)} title="Kitchen analysis">

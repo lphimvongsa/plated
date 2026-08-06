@@ -52,11 +52,7 @@ export default async function TimelinePage({ params }: { params: Promise<{ party
     <div className="space-y-8">
       <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="eyebrow">Order of operations</p>
-          <h2 className="mt-2 font-editorial text-5xl font-semibold">A timeline that moves with you.</h2>
-          <p className="mt-4 max-w-2xl text-sm leading-relaxed text-ink/55">
-            Tasks account for cooling, resting, equipment, dependencies, helper skill, and the party start time.
-          </p>
+          <h2 className="font-editorial text-5xl font-semibold">Order of Operations</h2>
         </div>
       </section>
 

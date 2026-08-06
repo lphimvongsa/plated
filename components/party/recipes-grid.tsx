@@ -37,11 +37,7 @@ export function RecipesGrid({ recipes }: { recipes: PartyRecipeCard[] }) {
     <div className="space-y-8">
       <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="eyebrow">Party recipes</p>
-          <h2 className="mt-2 font-editorial text-5xl font-semibold">The working cookbook.</h2>
-          <p className="mt-4 max-w-2xl text-sm text-ink/55">
-            Edit the versions used for this party without changing your original saved recipes.
-          </p>
+          <h2 className="font-editorial text-5xl font-semibold">Course Recipes</h2>
         </div>
         <button
           className="btn-primary"
