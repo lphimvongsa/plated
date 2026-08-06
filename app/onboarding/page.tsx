@@ -1,18 +1,46 @@
 "use client";
 
 import { Brand } from "@/components/brand";
+import { completeOnboarding } from "@/lib/actions/onboarding";
 import { pantryStaples } from "@/lib/mock-data";
 import { ArrowLeft, ArrowRight, Check, ChefHat, Gauge, Ruler } from "lucide-react";
-import { useState } from "react";
+import { useState, useTransition } from "react";
 
 const steps = ["Basics", "Kitchen", "Pantry"];
+
+const timezoneOptions = [
+  { label: "Eastern Time (US & Canada)", value: "America/New_York" },
+  { label: "Central Time (US & Canada)", value: "America/Chicago" },
+  { label: "Pacific Time (US & Canada)", value: "America/Los_Angeles" },
+];
 
 export default function OnboardingPage() {
   const [step, setStep] = useState(0);
   const [measurement, setMeasurement] = useState("US");
   const [skill, setSkill] = useState("Intermediate");
+  const [timezone, setTimezone] = useState("America/New_York");
   const [selected, setSelected] = useState<string[]>(["Kosher salt", "Black pepper", "Olive oil", "Garlic"]);
-  const toggle = (item: string) => setSelected((current) => current.includes(item) ? current.filter((value) => value !== item) : [...current, item]);
+  const [customStaple, setCustomStaple] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  const toggle = (item: string) =>
+    setSelected((current) =>
+      current.includes(item) ? current.filter((value) => value !== item) : [...current, item],
+    );
+
+  const finish = () => {
+    setError(null);
+    startTransition(async () => {
+      const result = await completeOnboarding({
+        measurement,
+        skill,
+        timezone,
+        pantry: selected,
+      });
+      if (result?.error) setError(result.error);
+    });
+  };
 
   return (
     <main className="paper-noise min-h-screen bg-paper px-4 py-5 md:px-8">
@@ -78,10 +106,12 @@ export default function OnboardingPage() {
 
                 <label className="mt-7 block">
                   <span className="mb-2 block text-[9px] font-bold uppercase tracking-[0.12em]">Timezone</span>
-                  <select className="field">
-                    <option>Eastern Time (US & Canada)</option>
-                    <option>Central Time (US & Canada)</option>
-                    <option>Pacific Time (US & Canada)</option>
+                  <select className="field" value={timezone} onChange={(e) => setTimezone(e.target.value)}>
+                    {timezoneOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
                   </select>
                 </label>
               </div>
@@ -113,11 +143,6 @@ export default function OnboardingPage() {
                     </button>
                   ))}
                 </div>
-
-                <label className="mt-7 block">
-                  <span className="mb-2 block text-[9px] font-bold uppercase tracking-[0.12em]">Specialties (optional)</span>
-                  <input className="field" placeholder="e.g. baking, grilling, pastry, sauces" />
-                </label>
               </div>
             ) : (
               <div>
@@ -139,18 +164,40 @@ export default function OnboardingPage() {
                 </div>
 
                 <div className="mt-7 flex gap-2">
-                  <input className="field" placeholder="Add another staple" />
-                  <button className="btn-secondary shrink-0">Add</button>
+                  <input
+                    className="field"
+                    placeholder="Add another staple"
+                    value={customStaple}
+                    onChange={(e) => setCustomStaple(e.target.value)}
+                  />
+                  <button
+                    className="btn-secondary shrink-0"
+                    type="button"
+                    onClick={() => {
+                      const value = customStaple.trim();
+                      if (!value) return;
+                      setSelected((current) => (current.includes(value) ? current : [...current, value]));
+                      setCustomStaple("");
+                    }}
+                  >
+                    Add
+                  </button>
                 </div>
               </div>
             )}
 
+            {error ? <p className="mt-4 text-sm text-tomato">{error}</p> : null}
+
             <div className="mt-auto flex items-center justify-between border-t border-ink/15 pt-6">
-              <button className="btn-secondary" onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0}>
+              <button className="btn-secondary" onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0 || pending}>
                 <ArrowLeft size={15} /> Back
               </button>
-              <button className="btn-primary" onClick={() => step < 2 ? setStep(step + 1) : window.location.assign("/app")}>
-                {step === 2 ? "Enter plated." : "Continue"} <ArrowRight size={15} />
+              <button
+                className="btn-primary"
+                disabled={pending}
+                onClick={() => (step < 2 ? setStep(step + 1) : finish())}
+              >
+                {pending ? "Saving…" : step === 2 ? "Enter plated." : "Continue"} <ArrowRight size={15} />
               </button>
             </div>
           </div>

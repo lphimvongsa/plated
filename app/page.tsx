@@ -202,7 +202,7 @@ export default function LandingPage() {
             </h2>
             <div className="mt-3 flex flex-wrap justify-center gap-3">
               <Link href="/auth/login" className="btn-primary px-7">Start planning <ArrowRight size={15} /></Link>
-              <Link href="/invite/summer-table" className="btn-secondary px-7">View an invitation</Link>
+              <Link href="/auth/login" className="btn-secondary px-7">Plan a dinner</Link>
             </div>
             <div className="mt-4 flex flex-wrap justify-center gap-x-7 gap-y-2 text-[9px] font-bold uppercase tracking-[0.13em] text-ink/45">
               <span className="inline-flex items-center gap-2"><Check size={12} /> Menu-first workflow</span>

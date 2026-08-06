@@ -1,13 +1,17 @@
 "use client";
 
 import { Brand } from "@/components/brand";
+import { signInWithEmail, signInWithGoogle, signUpWithEmail } from "@/lib/actions/auth";
 import { ArrowRight, Eye, EyeOff, Mail } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useTransition } from "react";
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [mode, setMode] = useState<"login" | "signup">("signup");
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
 
   return (
     <main className="paper-noise min-h-screen bg-paper lg:grid lg:grid-cols-[1.05fr_.95fr]">
@@ -43,7 +47,17 @@ export default function LoginPage() {
               : "Sign in to return to your menus, guests, and timelines."}
           </p>
 
-          <button className="btn-secondary mt-8 w-full justify-between bg-[#faf7f0]" onClick={() => window.location.assign("/onboarding")}>
+          <button
+            className="btn-secondary mt-8 w-full justify-between bg-[#faf7f0]"
+            disabled={pending}
+            onClick={() => {
+              setError(null);
+              startTransition(async () => {
+                const result = await signInWithGoogle();
+                if (result?.error) setError(result.error);
+              });
+            }}
+          >
             <span className="inline-flex items-center gap-3"><span className="text-sm font-bold text-[#4285F4]">G</span> Continue with Google</span>
             <ArrowRight size={14} />
           </button>
@@ -58,13 +72,23 @@ export default function LoginPage() {
             className="space-y-5"
             onSubmit={(event) => {
               event.preventDefault();
-              window.location.assign(mode === "signup" ? "/onboarding" : "/app");
+              setError(null);
+              setMessage(null);
+              const formData = new FormData(event.currentTarget);
+              startTransition(async () => {
+                const result =
+                  mode === "signup"
+                    ? await signUpWithEmail(formData)
+                    : await signInWithEmail(formData);
+                if (result?.error) setError(result.error);
+                if (result && "message" in result && result.message) setMessage(result.message);
+              });
             }}
           >
             {mode === "signup" ? (
               <label className="block">
                 <span className="mb-2 block text-[9px] font-bold uppercase tracking-[0.12em]">Name</span>
-                <input className="field" placeholder="Your name" required />
+                <input className="field" name="name" placeholder="Your name" required />
               </label>
             ) : null}
 
@@ -72,7 +96,7 @@ export default function LoginPage() {
               <span className="mb-2 block text-[9px] font-bold uppercase tracking-[0.12em]">Email</span>
               <div className="relative">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-ink/30" size={16} />
-                <input type="email" className="field pl-11" placeholder="you@example.com" required />
+                <input type="email" name="email" className="field pl-11" placeholder="you@example.com" required />
               </div>
             </label>
 
@@ -82,21 +106,38 @@ export default function LoginPage() {
                 {mode === "login" ? <button type="button" className="text-tomato">Forgot password?</button> : null}
               </span>
               <div className="relative">
-                <input type={showPassword ? "text" : "password"} className="field pr-11" placeholder="8+ characters" minLength={8} required />
+                <input
+                  type={showPassword ? "text" : "password"}
+                  name="password"
+                  className="field pr-11"
+                  placeholder="8+ characters"
+                  minLength={8}
+                  required
+                />
                 <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-ink/38" aria-label="Toggle password visibility">
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
             </label>
 
-            <button className="btn-primary mt-2 w-full justify-between" type="submit">
-              {mode === "signup" ? "Create account" : "Sign in"} <ArrowRight size={15} />
+            {error ? <p className="text-sm text-tomato">{error}</p> : null}
+            {message ? <p className="text-sm text-olive">{message}</p> : null}
+
+            <button className="btn-primary mt-2 w-full justify-between" type="submit" disabled={pending}>
+              {pending ? "Working…" : mode === "signup" ? "Create account" : "Sign in"} <ArrowRight size={15} />
             </button>
           </form>
 
           <p className="mt-7 text-center text-xs text-ink/50">
             {mode === "signup" ? "Already have an account?" : "New to plated.?"}{" "}
-            <button className="border-b border-tomato font-bold text-tomato" onClick={() => setMode(mode === "signup" ? "login" : "signup")}>
+            <button
+              className="border-b border-tomato font-bold text-tomato"
+              onClick={() => {
+                setMode(mode === "signup" ? "login" : "signup");
+                setError(null);
+                setMessage(null);
+              }}
+            >
               {mode === "signup" ? "Log in" : "Create one"}
             </button>
           </p>
