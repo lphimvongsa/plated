@@ -213,7 +213,7 @@ function DayColumn({
       : null;
 
   return (
-    <div className="min-w-[168px] flex-1">
+    <div className="min-w-[168px] flex-1" data-timeline-day={dayId}>
       <div
         className={`sticky top-0 z-20 border-b border-ink/10 px-2 py-3 text-center ${
           isPartyDay ? "bg-orange text-paper" : "bg-[#f8f2e8]"
@@ -294,6 +294,7 @@ export function TimelineBoard({
   const [tasks, setTasks] = useState(initialTasks);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [guide, setGuide] = useState<DropGuide | null>(null);
+  const [overlayWidth, setOverlayWidth] = useState(180);
   const [, startTransition] = useTransition();
 
   useEffect(() => {
@@ -313,6 +314,13 @@ export function TimelineBoard({
   );
   const gridHeight = hours.length * HOUR_HEIGHT;
   const maxMinutes = hours.length * 60 - SNAP_MINUTES;
+
+  useEffect(() => {
+    if (!activeId) return;
+    const column = document.querySelector<HTMLElement>("[data-timeline-day]");
+    if (!column) return;
+    setOverlayWidth(Math.max(140, column.getBoundingClientRect().width - 8));
+  }, [activeId, bounds.days.length]);
 
   const tasksByDay = useMemo(() => {
     const map = new Map<
@@ -481,7 +489,10 @@ export function TimelineBoard({
 
       <DragOverlay dropAnimation={null}>
         {activeTask ? (
-          <div style={{ width: 188, height: activeHeight }} className="pointer-events-none origin-top-left">
+          <div
+            style={{ width: overlayWidth, height: activeHeight }}
+            className="pointer-events-none origin-top-left"
+          >
             <TaskBlockVisual
               task={activeTask}
               duration={activeDuration}
