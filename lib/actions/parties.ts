@@ -132,6 +132,37 @@ export async function toggleTaskLocked(taskId: string, locked: boolean, partyId:
   revalidatePath(`/app/parties/${partyId}/timeline`);
 }
 
+export async function rescheduleTask(taskId: string, partyId: string, startAtIso: string) {
+  const supabase = await createClient();
+  const startAt = new Date(startAtIso);
+  if (Number.isNaN(startAt.getTime())) {
+    return { error: "Invalid start time." };
+  }
+
+  const { data: task } = await supabase
+    .from("tasks")
+    .select("duration_minutes, title, locked")
+    .eq("id", taskId)
+    .maybeSingle();
+
+  if (!task) return { error: "Task not found." };
+  if (task.locked) return { error: "Locked tasks cannot be rescheduled." };
+
+  const duration =
+    task.duration_minutes && task.duration_minutes > 0 ? task.duration_minutes : 30;
+  const dueAt = new Date(startAt.getTime() + duration * 60_000).toISOString();
+
+  const { error } = await supabase
+    .from("tasks")
+    .update({ start_at: startAt.toISOString(), due_at: dueAt })
+    .eq("id", taskId);
+
+  if (error) return { error: error.message };
+
+  revalidatePath(`/app/parties/${partyId}/timeline`);
+  return { error: null };
+}
+
 export async function addGuest(partyId: string, formData: FormData) {
   const supabase = await createClient();
   const name = String(formData.get("name") ?? "").trim();

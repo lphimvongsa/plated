@@ -9,11 +9,13 @@ export function TaskDoneToggle({
   partyId,
   done,
   title,
+  variant = "spine",
 }: {
   taskId: string;
   partyId: string;
   done: boolean;
   title: string;
+  variant?: "spine" | "inline";
 }) {
   const [pending, startTransition] = useTransition();
 
@@ -21,17 +23,24 @@ export function TaskDoneToggle({
     <button
       type="button"
       disabled={pending}
+      onPointerDown={(event) => event.stopPropagation()}
       onClick={() =>
         startTransition(async () => {
           await toggleTaskDone(taskId, !done, partyId);
         })
       }
-      className={`absolute -left-[46px] top-6 z-10 grid h-9 w-9 place-items-center rounded-full border-4 border-paper ${
-        done ? "bg-olive text-paper" : "bg-paper text-ink/35 ring-1 ring-ink/15"
-      }`}
+      className={
+        variant === "inline"
+          ? `mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full ${
+              done ? "bg-olive text-paper" : "bg-paper text-ink/35 ring-1 ring-ink/15"
+            }`
+          : `absolute -left-[46px] top-6 z-10 grid h-9 w-9 place-items-center rounded-full border-4 border-paper ${
+              done ? "bg-olive text-paper" : "bg-paper text-ink/35 ring-1 ring-ink/15"
+            }`
+      }
       aria-label={`Mark ${title} ${done ? "incomplete" : "complete"}`}
     >
-      {done ? <Check size={15} /> : <Play size={13} />}
+      {done ? <Check size={variant === "inline" ? 12 : 15} /> : <Play size={variant === "inline" ? 11 : 13} />}
     </button>
   );
 }
