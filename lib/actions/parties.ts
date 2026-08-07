@@ -185,3 +185,81 @@ export async function regenerateInvite(inviteId: string, partyId: string) {
   revalidatePath(`/app/parties/${partyId}/guests`);
   return { error: null, token };
 }
+
+export async function addRecipeToPartyMenu(partyId: string, recipeId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { error: "Sign in to add recipes to a party menu.", alreadyOnMenu: false };
+  }
+
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    recipeId,
+  );
+  if (!isUuid) {
+    return {
+      error: "Sample cookbook recipes can’t be added yet. Save a recipe to your account first.",
+      alreadyOnMenu: false,
+    };
+  }
+
+  const { data: membership } = await supabase
+    .from("party_members")
+    .select("party_id")
+    .eq("party_id", partyId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (!membership) {
+    return { error: "You do not have access to that party.", alreadyOnMenu: false };
+  }
+
+  const { data: recipe } = await supabase
+    .from("recipes")
+    .select("id, course, owner_id")
+    .eq("id", recipeId)
+    .maybeSingle();
+
+  if (!recipe || recipe.owner_id !== user.id) {
+    return { error: "Recipe not found in your cookbook.", alreadyOnMenu: false };
+  }
+
+  const { data: existing } = await supabase
+    .from("menu_items")
+    .select("id")
+    .eq("party_id", partyId)
+    .eq("recipe_id", recipeId)
+    .maybeSingle();
+
+  if (existing) {
+    return { error: null, alreadyOnMenu: true };
+  }
+
+  const { data: lastItem } = await supabase
+    .from("menu_items")
+    .select("sort_order")
+    .eq("party_id", partyId)
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const { error } = await supabase.from("menu_items").insert({
+    party_id: partyId,
+    recipe_id: recipeId,
+    course: recipe.course,
+    sort_order: (lastItem?.sort_order ?? 0) + 1,
+    guest_visible: true,
+  });
+
+  if (error) {
+    return { error: error.message, alreadyOnMenu: false };
+  }
+
+  revalidatePath(`/app/parties/${partyId}/menu`);
+  revalidatePath(`/app/parties/${partyId}`);
+  revalidatePath("/app/recipes");
+  return { error: null, alreadyOnMenu: false };
+}
