@@ -193,6 +193,31 @@ img {
   animation: floaty 7s ease-in-out infinite;
 }
 
+.cookbook-shell {
+  border-radius: 4px 18px 18px 4px;
+  transform-origin: center left;
+}
+
+.cookbook-shell.is-turning-next,
+.cookbook-shell.is-turning-prev {
+  animation: cookbook-page-turn 280ms ease;
+}
+
+@keyframes cookbook-page-turn {
+  0% {
+    transform: perspective(1400px) rotateY(0deg);
+    filter: brightness(1);
+  }
+  45% {
+    transform: perspective(1400px) rotateY(-4deg);
+    filter: brightness(0.96);
+  }
+  100% {
+    transform: perspective(1400px) rotateY(0deg);
+    filter: brightness(1);
+  }
+}
+
 @media (max-width: 767px) {
   .editorial-grid {
     background-size: 42px 42px;
