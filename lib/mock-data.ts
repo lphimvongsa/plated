@@ -100,14 +100,14 @@ export const shoppingGroups = [
 ];
 
 export const timelineTasks = [
-  { id: 1, time: "Thu · 7:00 PM", title: "Make tart dough", detail: "Rest overnight in refrigerator", assignee: "Lukas", level: "Intermediate", done: true, locked: true },
-  { id: 2, time: "Fri · 6:00 PM", title: "Marinate chicken", detail: "Lemon, garlic, oregano — 20 min active", assignee: "Maya", level: "Beginner", done: true, locked: false },
-  { id: 3, time: "Sat · 10:00 AM", title: "Bake olive oil cake", detail: "Must cool before citrus glaze", assignee: "Lukas", level: "Intermediate", done: false, locked: true },
-  { id: 4, time: "Sat · 1:30 PM", title: "Set table & chill wine", detail: "Outdoor table, flowers, candles", assignee: "Ari", level: "Beginner", done: false, locked: false },
-  { id: 5, time: "Sat · 3:00 PM", title: "Blind-bake tart shell", detail: "Oven 375°F · Dependency: chilled dough", assignee: "Maya", level: "Intermediate", done: false, locked: false },
-  { id: 6, time: "Sat · 4:10 PM", title: "Prep greens and tahini", detail: "Hold dressing separately", assignee: "Ari", level: "Beginner", done: false, locked: false },
-  { id: 7, time: "Sat · 5:10 PM", title: "Grill chicken", detail: "Two batches · rest 15 min", assignee: "Lukas", level: "Advanced", done: false, locked: true },
-  { id: 8, time: "Sat · 6:05 PM", title: "Finish tart & plate welcome bite", detail: "Keep main grill zone clear", assignee: "Maya", level: "Intermediate", done: false, locked: false },
+  { id: 1, time: "Thu · 7:00 PM", title: "Make tart dough", detail: "Rest overnight in refrigerator", assignee: "Lukas", level: "Intermediate", done: true, locked: true, duration: 45 },
+  { id: 2, time: "Fri · 6:00 PM", title: "Marinate chicken", detail: "Lemon, garlic, oregano — 20 min active", assignee: "Maya", level: "Beginner", done: true, locked: false, duration: 20 },
+  { id: 3, time: "Sat · 10:00 AM", title: "Bake olive oil cake", detail: "Must cool before citrus glaze", assignee: "Lukas", level: "Intermediate", done: false, locked: true, duration: 75 },
+  { id: 4, time: "Sat · 1:30 PM", title: "Set table & chill wine", detail: "Outdoor table, flowers, candles", assignee: "Ari", level: "Beginner", done: false, locked: false, duration: 45 },
+  { id: 5, time: "Sat · 3:00 PM", title: "Blind-bake tart shell", detail: "Oven 375°F · Dependency: chilled dough", assignee: "Maya", level: "Intermediate", done: false, locked: false, duration: 40 },
+  { id: 6, time: "Sat · 4:10 PM", title: "Prep greens and tahini", detail: "Hold dressing separately", assignee: "Ari", level: "Beginner", done: false, locked: false, duration: 30 },
+  { id: 7, time: "Sat · 5:10 PM", title: "Grill chicken", detail: "Two batches · rest 15 min", assignee: "Lukas", level: "Advanced", done: false, locked: true, duration: 50 },
+  { id: 8, time: "Sat · 6:05 PM", title: "Finish tart & plate welcome bite", detail: "Keep main grill zone clear", assignee: "Maya", level: "Intermediate", done: false, locked: false, duration: 35 },
 ];
 
 export const guests = [

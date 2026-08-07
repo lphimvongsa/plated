@@ -1,7 +1,7 @@
-import { TaskDoneToggle, TaskLockToggle } from "@/components/party/task-toggles";
+import { TimelineBoard, type TimelineBoardTask } from "@/components/party/timeline-board";
 import { formatPartyWhen } from "@/lib/calendar";
 import { createClient } from "@/lib/supabase/server";
-import { Clock3, Lock, UserRound } from "lucide-react";
+import { Clock3 } from "lucide-react";
 import { notFound } from "next/navigation";
 
 function formatTaskWhen(iso: string | null, timeZone: string) {
@@ -36,7 +36,7 @@ export default async function TimelinePage({ params }: { params: Promise<{ party
     .eq("party_id", partyId)
     .order("sort_order");
 
-  const list = tasks ?? [];
+  const list = (tasks ?? []) as TimelineBoardTask[];
   const complete = list.filter((task) => task.status === "done").length;
   const next = list.find((task) => task.status !== "done");
   const { date, time } = formatPartyWhen(party.starts_at, party.timezone);
@@ -56,6 +56,7 @@ export default async function TimelinePage({ params }: { params: Promise<{ party
           <h2 className="mt-2 font-editorial text-5xl font-semibold">A timeline that moves with you.</h2>
           <p className="mt-4 max-w-2xl text-sm leading-relaxed text-ink/55">
             Tasks account for cooling, resting, equipment, dependencies, helper skill, and the party start time.
+            Drag blocks to reschedule — pickup size matches duration, and a silhouette marks the landing slot.
           </p>
         </div>
       </section>
@@ -90,53 +91,12 @@ export default async function TimelinePage({ params }: { params: Promise<{ party
       </section>
 
       <section className="grid gap-6 lg:grid-cols-[1fr_290px]">
-        <div className="relative">
-          <div className="absolute bottom-6 left-[26px] top-6 w-px bg-ink/15" />
-          <div className="space-y-4">
-            {list.length === 0 ? (
-              <article className="relative ml-14 rounded-[1.5rem] border border-ink/10 bg-[#f8f2e8] p-5 shadow-card">
-                <p className="font-editorial text-2xl font-semibold">No timeline tasks yet.</p>
-                <p className="mt-2 text-sm text-ink/50">Tasks will show up here once the party plan is generated.</p>
-              </article>
-            ) : null}
-            {list.map((task) => {
-              const done = task.status === "done";
-              return (
-                <article
-                  key={task.id}
-                  className={`relative ml-14 rounded-[1.5rem] border p-5 transition ${done ? "border-olive/20 bg-olive/7" : "border-ink/10 bg-[#f8f2e8] shadow-card"}`}
-                >
-                  <TaskDoneToggle taskId={task.id} partyId={partyId} done={done} title={task.title} />
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-xs font-bold uppercase tracking-wider text-tomato">
-                          {formatTaskWhen(task.start_at, party.timezone)}
-                        </span>
-                        {task.locked ? (
-                          <span className="chip">
-                            <Lock size={12} /> locked
-                          </span>
-                        ) : null}
-                      </div>
-                      <h3 className={`mt-3 font-editorial text-2xl font-semibold ${done ? "text-ink/48 line-through" : ""}`}>
-                        {task.title}
-                      </h3>
-                      <p className="mt-2 text-sm text-ink/50">{task.description || "No notes"}</p>
-                    </div>
-                    <div className="flex shrink-0 flex-wrap gap-2">
-                      <span className="chip">
-                        <UserRound size={13} /> {task.assigned_name || "Unassigned"}
-                      </span>
-                      {task.difficulty ? <span className="chip">{task.difficulty}</span> : null}
-                      <TaskLockToggle taskId={task.id} partyId={partyId} locked={task.locked} />
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </div>
+        <TimelineBoard
+          partyId={partyId}
+          partyStartsAt={party.starts_at}
+          timezone={party.timezone}
+          tasks={list}
+        />
         <aside className="space-y-4">
           <article className="card p-5">
             <p className="eyebrow">Workload</p>

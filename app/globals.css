@@ -193,6 +193,22 @@ img {
   animation: floaty 7s ease-in-out infinite;
 }
 
+@keyframes silhouette-pulse {
+  0%,
+  100% {
+    border-color: rgba(200, 68, 50, 0.55);
+    background-color: rgba(200, 68, 50, 0.08);
+  }
+  50% {
+    border-color: rgba(200, 68, 50, 0.9);
+    background-color: rgba(200, 68, 50, 0.14);
+  }
+}
+
+.timeline-drop-silhouette {
+  animation: silhouette-pulse 1.4s ease-in-out infinite;
+}
+
 @media (max-width: 767px) {
   .editorial-grid {
     background-size: 42px 42px;
