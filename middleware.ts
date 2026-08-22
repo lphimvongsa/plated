@@ -6,10 +6,7 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    /*
-     * Skip Next internals and all static assets in /public.
-     */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|webmanifest|js)$).*)",
-  ],
+  // Only routes that require authentication or auth-route redirects pay for
+  // Supabase's remote user validation/session refresh.
+  matcher: ["/app/:path*", "/onboarding/:path*", "/auth/:path*"],
 };

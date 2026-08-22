@@ -25,9 +25,13 @@ import {
   ChevronDown,
   Clock3,
   ImageIcon,
+  Info,
+  ListChecks,
+  Pencil,
   Plus,
   Save,
   Trash2,
+  Utensils,
   Users,
   X,
 } from "lucide-react";
@@ -95,30 +99,52 @@ function CollapsibleSection({
   defaultOpen = true,
   actions,
   children,
+  level = "group",
 }: {
   title: string;
   count?: number;
   defaultOpen?: boolean;
   actions?: ReactNode;
   children: ReactNode;
+  /** Parent sections (Ingredients / Tasks) sit above nested category/task headers. */
+  level?: "section" | "group";
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  const isSection = level === "section";
   return (
     <details
       open={open}
       onToggle={(e) => setOpen(e.currentTarget.open)}
-      className="group overflow-hidden rounded-[2px] border border-ink/10 bg-white/50"
+      className={`group overflow-hidden rounded-[2px] border bg-tomato/[0.05] shadow-[inset_0_1px_0_0_rgb(var(--tomato-rgb)/0.12)] ${
+        isSection ? "border-tomato/30" : "border-tomato/20"
+      }`}
     >
-      <summary className="flex cursor-pointer list-none items-center gap-3 px-5 py-4 [&::-webkit-details-marker]:hidden">
+      <summary
+        className={`flex cursor-pointer list-none items-center gap-3 px-5 [&::-webkit-details-marker]:hidden ${
+          isSection ? "bg-tomato/12 py-4" : "bg-tomato/[0.07] py-3.5"
+        }`}
+      >
         <ChevronDown
-          size={16}
-          className={`shrink-0 text-ink/35 transition ${open ? "rotate-180" : ""}`}
+          size={isSection ? 16 : 15}
+          className={`shrink-0 text-tomato transition ${open ? "rotate-180" : ""} ${
+            isSection ? "" : "opacity-70"
+          }`}
         />
-        <span className="min-w-0 flex-1 truncate font-editorial text-2xl font-semibold leading-none">
+        <span
+          className={`min-w-0 flex-1 truncate font-editorial font-semibold leading-none text-tomato ${
+            isSection ? "text-2xl" : "text-xl tracking-wide"
+          }`}
+        >
           {title}
         </span>
         {count != null ? (
-          <span className="shrink-0 text-[10px] font-bold uppercase tracking-widest text-ink/35">
+          <span
+            className={`shrink-0 rounded-[2px] px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest ${
+              isSection
+                ? "bg-tomato text-white"
+                : "border border-tomato/40 bg-transparent text-tomato"
+            }`}
+          >
             {count}
           </span>
         ) : null}
@@ -134,7 +160,7 @@ function CollapsibleSection({
           </div>
         ) : null}
       </summary>
-      <div className="space-y-3 border-t border-ink/8 bg-paper/40 px-4 py-4 sm:px-5 sm:py-5">
+      <div className="space-y-3 border-t border-tomato/15 bg-white/75 px-4 py-4 sm:px-5 sm:py-5">
         {children}
       </div>
     </details>
@@ -156,6 +182,10 @@ export function RecipeEditor({
   const [deletePending, startDeleteTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(mode === "create");
+  const [activeTab, setActiveTab] = useState<"ingredients" | "tasks" | "details">(
+    "ingredients",
+  );
 
   const [title, setTitle] = useState(recipe?.title ?? "");
   const [description, setDescription] = useState(recipe?.description ?? "");
@@ -432,6 +462,7 @@ export function RecipeEditor({
           return;
         }
         setMessage("Recipe saved.");
+        setIsEditing(false);
         router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not save recipe.");
@@ -559,6 +590,255 @@ export function RecipeEditor({
     );
   }
 
+  const viewTabs = [
+    { id: "ingredients" as const, label: "Ingredients", icon: Utensils },
+    { id: "tasks" as const, label: "Tasks", icon: ListChecks },
+    { id: "details" as const, label: "Details", icon: Info },
+  ];
+
+  if (!isEditing && mode === "edit") {
+    const populatedIngredients = ingredients.filter((row) => row.name.trim());
+    const populatedSteps = steps.filter((row) => row.title.trim() || row.description?.trim());
+    const detailRows = [
+      ["Cuisine", cuisine],
+      ["Difficulty", difficulty],
+      ["Equipment", equipment],
+      ["Dietary", dietaryTags],
+      ["Allergens", allergyTags],
+      ["Tags", tags],
+    ].filter(([, value]) => value.trim());
+
+    return (
+      <div className="space-y-6">
+        <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            {backHref ? (
+              <Link href={backHref} className="editorial-link mb-3 text-ink/55">
+                ← Back
+              </Link>
+            ) : null}
+            <p className="eyebrow">{isPartyRecipe ? "Party recipe" : "Cookbook"}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {canUpdateCookbook ? (
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={cookbookPending}
+                onClick={handleUpdateCookbook}
+              >
+                <BookMarked size={15} /> Update cookbook
+              </button>
+            ) : null}
+            <button type="button" className="btn-primary" onClick={() => setIsEditing(true)}>
+              <Pencil size={15} /> Edit recipe
+            </button>
+          </div>
+        </header>
+
+        {message ? (
+          <div className="rounded-[2px] border border-olive/25 bg-olive/8 p-4 text-sm font-semibold text-olive">
+            {message}
+          </div>
+        ) : null}
+        {error ? (
+          <div className="rounded-[2px] border border-tomato/25 bg-tomato/5 p-4 text-sm font-semibold text-tomato">
+            {error}
+          </div>
+        ) : null}
+
+        <section className="card overflow-hidden">
+          <div className="relative aspect-[16/9] max-h-[440px] w-full bg-ink/5 md:aspect-[21/9]">
+            {imageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={imageUrl} alt={title} className="absolute inset-0 h-full w-full object-cover" />
+            ) : (
+              <div className="absolute inset-0 grid place-items-center text-ink/25">
+                <ImageIcon size={42} strokeWidth={1.15} />
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="space-y-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="min-w-0">
+              <div className="mb-2 flex flex-wrap gap-2">
+                {course ? <span className="chip border-tomato/25 bg-tomato/5 text-tomato">{course}</span> : null}
+                {showIncompleteBadge ? (
+                  <span className="chip border-orange/30 bg-orange/10 text-orange">
+                    <AlertTriangle size={12} /> Incomplete import
+                  </span>
+                ) : null}
+              </div>
+              <h1 className="font-editorial text-4xl font-semibold leading-[1.05] tracking-[-0.03em] md:text-5xl">
+                {title || "Untitled recipe"}
+              </h1>
+              {description ? <p className="mt-3 max-w-3xl text-base leading-relaxed text-ink/60">{description}</p> : null}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 divide-x divide-y divide-ink/10 overflow-hidden rounded-[2px] border border-ink/10 bg-white/40 md:grid-cols-4 md:divide-y-0">
+            {[
+              { label: "Prep", value: prepMinutes, icon: Clock3 },
+              { label: "Cook", value: cookMinutes, icon: ChefHat },
+              { label: "Total", value: computedTotal || "", icon: Clock3 },
+              { label: "Serves", value: servings, icon: Users },
+            ].map(({ label, value, icon: Icon }) => (
+              <div key={label} className="px-4 py-4">
+                <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-ink/40">
+                  <Icon size={12} /> {label}
+                </span>
+                <p className="mt-2 font-editorial text-2xl font-semibold">
+                  {value || "—"}{label !== "Serves" && value ? <span className="ml-1 text-sm font-normal text-ink/40">min</span> : null}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <nav
+          className="grid grid-cols-3 gap-1 rounded-full border border-ink/10 bg-white/70 p-1.5 shadow-sm lg:hidden"
+          aria-label="Recipe sections"
+        >
+          {viewTabs.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === id}
+              className={`flex items-center justify-center gap-2 rounded-full px-3 py-2.5 text-xs font-bold transition sm:text-sm ${
+                activeTab === id ? "bg-tomato text-white shadow-sm" : "text-ink/50 hover:bg-ink/5 hover:text-ink"
+              }`}
+              onClick={() => setActiveTab(id)}
+            >
+              <Icon size={15} /> {label}
+            </button>
+          ))}
+        </nav>
+
+        <section className="min-h-64 space-y-8">
+          <div className="grid gap-8 lg:grid-cols-2 lg:items-start lg:gap-8 xl:gap-10">
+            <div
+              role="tabpanel"
+              className={`min-w-0 ${activeTab === "ingredients" ? "block" : "hidden lg:block"}`}
+            >
+              <CollapsibleSection
+                title="Ingredients"
+                count={populatedIngredients.length || undefined}
+                defaultOpen
+                level="section"
+              >
+                <div className="space-y-3">
+                  {INGREDIENT_CATEGORIES.map((category) => {
+                    const rows = populatedIngredients.filter(
+                      (row) => (row.category?.trim() || "Other") === category,
+                    );
+                    if (!rows.length) return null;
+                    return (
+                      <CollapsibleSection key={category} title={category} count={rows.length} defaultOpen>
+                        <ul className="divide-y divide-tomato/12">
+                          {rows.map((row, index) => (
+                            <li key={row.id ?? `${category}-${index}`} className="flex items-start gap-4 py-3.5">
+                              <span className="w-24 shrink-0 font-editorial text-lg font-semibold text-tomato">
+                                {[row.quantity, row.unit].filter((value) => value != null && value !== "").join(" ") || "To taste"}
+                              </span>
+                              <span className="min-w-0 text-sm leading-relaxed">
+                                {row.name}
+                                {row.preparation_note ? <span className="text-ink/45">, {row.preparation_note}</span> : null}
+                                {row.pantry_flag ? <span className="ml-2 text-[10px] font-bold uppercase tracking-widest text-olive">Pantry</span> : null}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </CollapsibleSection>
+                    );
+                  })}
+                  {!populatedIngredients.length ? (
+                    <p className="py-8 text-center text-sm text-ink/45">No ingredients added yet.</p>
+                  ) : null}
+                </div>
+              </CollapsibleSection>
+            </div>
+
+            <div
+              role="tabpanel"
+              className={`min-w-0 ${activeTab === "tasks" ? "block" : "hidden lg:block"}`}
+            >
+              <CollapsibleSection
+                title="Tasks"
+                count={
+                  stepsByTask.order.filter((taskName) =>
+                    (stepsByTask.map.get(taskName) ?? []).some(({ row }) => populatedSteps.includes(row)),
+                  ).length || undefined
+                }
+                defaultOpen
+                level="section"
+              >
+                <div className="space-y-3">
+                  {stepsByTask.order.map((taskName) => {
+                    const rows = (stepsByTask.map.get(taskName) ?? []).filter(({ row }) =>
+                      populatedSteps.includes(row),
+                    );
+                    if (!rows.length) return null;
+                    return (
+                      <CollapsibleSection key={taskName} title={taskName} count={rows.length} defaultOpen>
+                        <ol className="space-y-3">
+                          {rows.map(({ row }, index) => (
+                            <li key={row.id ?? `${taskName}-${index}`}>
+                              <details open className="group rounded-[2px] border border-ink/8 bg-white/50">
+                                <summary className="grid cursor-pointer list-none gap-3 px-4 py-4 sm:grid-cols-[2.5rem_minmax(0,1fr)_auto_auto] [&::-webkit-details-marker]:hidden">
+                                  <span className="font-editorial text-2xl font-semibold text-tomato">{String(index + 1).padStart(2, "0")}</span>
+                                  <h3 className="self-center font-semibold">{row.title || `Step ${index + 1}`}</h3>
+                                  {row.duration_minutes ? <span className="self-center text-xs font-semibold text-ink/40">{formatMinutes(row.duration_minutes)}</span> : null}
+                                  <ChevronDown size={16} className="self-center text-ink/35 transition group-open:rotate-180" />
+                                </summary>
+                                {row.description ? <p className="border-t border-ink/8 px-4 py-4 text-sm leading-relaxed text-ink/60 sm:pl-[4.5rem]">{row.description}</p> : null}
+                              </details>
+                            </li>
+                          ))}
+                        </ol>
+                      </CollapsibleSection>
+                    );
+                  })}
+                  {!populatedSteps.length ? (
+                    <p className="py-8 text-center text-sm text-ink/45">No tasks added yet.</p>
+                  ) : null}
+                </div>
+              </CollapsibleSection>
+            </div>
+          </div>
+
+          <div role="tabpanel" className={activeTab === "details" ? "block" : "hidden lg:block"}>
+            <h2 className="mb-4 hidden font-editorial text-3xl font-semibold lg:block">Details</h2>
+            <div className="space-y-5 rounded-[2px] border border-ink/10 bg-white/45 p-5 sm:p-6">
+              {detailRows.length ? (
+                <dl className="grid gap-x-8 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
+                  {detailRows.map(([label, value]) => (
+                    <div key={label}>
+                      <dt className="text-[10px] font-bold uppercase tracking-widest text-ink/40">{label}</dt>
+                      <dd className="mt-1.5 text-sm leading-relaxed">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : null}
+              {[
+                ["Make ahead", makeAhead], ["Storage", storage], ["Reheating", reheating], ["Personal notes", notes],
+              ].filter(([, value]) => value.trim()).map(([label, value]) => (
+                <div key={label} className="border-t border-ink/8 pt-5">
+                  <h3 className="font-editorial text-xl font-semibold">{label}</h3>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-ink/60">{value}</p>
+                </div>
+              ))}
+              {sourceUrl ? <a href={sourceUrl} target="_blank" rel="noreferrer" className="editorial-link inline-block text-sm">View original source ↗</a> : null}
+              {!detailRows.length && !makeAhead && !storage && !reheating && !notes && !sourceUrl ? <p className="py-8 text-center text-sm text-ink/45">No additional details yet.</p> : null}
+            </div>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <section className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
@@ -589,6 +869,11 @@ export function RecipeEditor({
               onClick={handleUpdateCookbook}
             >
               <BookMarked size={15} /> Update cookbook
+            </button>
+          ) : null}
+          {mode === "edit" ? (
+            <button type="button" className="btn-secondary" onClick={() => setIsEditing(false)}>
+              Cancel
             </button>
           ) : null}
           {mode === "edit" ? (
@@ -751,334 +1036,372 @@ export function RecipeEditor({
         </div>
       </section>
 
+      <nav
+        className="grid grid-cols-3 gap-1 rounded-full border border-ink/10 bg-white/70 p-1.5 shadow-sm lg:hidden"
+        aria-label="Recipe editor sections"
+      >
+        {viewTabs.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === id}
+            className={`flex items-center justify-center gap-2 rounded-full px-3 py-2.5 text-xs font-bold transition ${
+              activeTab === id ? "bg-tomato text-white shadow-sm" : "text-ink/50 hover:bg-ink/5 hover:text-ink"
+            }`}
+            onClick={() => setActiveTab(id)}
+          >
+            <Icon size={15} /> {label}
+          </button>
+        ))}
+      </nav>
+
       {/* Ingredients + Steps */}
-      <section className="grid gap-8 lg:grid-cols-2 lg:gap-8 xl:gap-10">
-        <div className="min-w-0 space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="font-editorial text-3xl font-semibold">Ingredients</h2>
-            <button
-              type="button"
-              className="btn-secondary px-3 py-2 text-[10px]"
-              onClick={() => addIngredient("Other")}
-            >
-              <Plus size={14} /> Add
-            </button>
-          </div>
-          <div className="space-y-3">
-            {INGREDIENT_CATEGORIES.map((category) => {
-              const rows = ingredientsByCategory.get(category) ?? [];
-              if (rows.length === 0) return null;
-              return (
-                <CollapsibleSection
-                  key={category}
-                  title={category}
-                  count={rows.length}
-                  defaultOpen
-                  actions={
-                    <button
-                      type="button"
-                      className="btn-icon h-8 w-8"
-                      aria-label={`Add ${category} ingredient`}
-                      onClick={() => addIngredient(category)}
-                    >
-                      <Plus size={14} />
-                    </button>
-                  }
-                >
-                  {rows.map(({ index, row }) => (
-                    <div
-                      key={row.id ?? `ing-${index}`}
-                      className="space-y-1.5 rounded-[2px] border border-ink/10 bg-white/70 px-2.5 py-2"
-                    >
-                      <div className="flex items-center gap-2">
-                      <input
-                        className="field min-w-0 flex-1 basis-0 px-3 py-2"
-                        placeholder="Ingredient"
-                        aria-label="Ingredient name"
-                        value={row.name}
-                        onChange={(e) => updateIngredient(index, { name: e.target.value })}
-                        onBlur={() => {
-                          void finalizeIngredientRow(index);
-                        }}
-                      />
-                      <input
-                        className="field w-16 shrink-0 px-2 py-2 text-center"
-                        type="number"
-                        step="0.01"
-                        placeholder="Qty"
-                        aria-label="Quantity"
-                        value={row.quantity ?? ""}
-                        onChange={(e) =>
-                          updateIngredient(index, {
-                            quantity: e.target.value === "" ? null : Number(e.target.value),
-                          })
-                        }
-                        onBlur={(e) => {
-                          const next =
-                            e.target.value === "" ? null : roundQuantity(Number(e.target.value));
-                          updateIngredient(index, { quantity: next });
-                        }}
-                      />
-                      <input
-                        className="field w-14 shrink-0 px-2 py-2 text-center"
-                        placeholder="Unit"
-                        aria-label="Unit"
-                        value={row.unit ?? ""}
-                        onChange={(e) => updateIngredient(index, { unit: e.target.value })}
-                        onBlur={() => {
-                          void finalizeIngredientRow(index);
-                        }}
-                      />
-                      <select
-                        className="field w-[6.5rem] shrink-0 px-2 py-2 text-xs"
-                        value={row.category || "Other"}
-                        onChange={(e) => updateIngredient(index, { category: e.target.value })}
-                        aria-label="Category"
-                      >
-                        {INGREDIENT_CATEGORIES.map((name) => (
-                          <option key={name} value={name}>
-                            {name}
-                          </option>
-                        ))}
-                      </select>
-                      <label
-                        className="flex shrink-0 items-center gap-1.5 text-[11px] font-semibold text-ink/50"
-                        title="Pantry staple"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={Boolean(row.pantry_flag)}
-                          onChange={(e) =>
-                            updateIngredient(index, { pantry_flag: e.target.checked })
-                          }
-                        />
-                        Pantry
-                      </label>
-                      <button
-                        type="button"
-                        className="btn-icon h-9 w-9 shrink-0"
-                        aria-label="Remove ingredient"
-                        onClick={() =>
-                          setIngredients((list) => list.filter((_, i) => i !== index))
-                        }
-                      >
-                        <X size={14} />
-                      </button>
-                      </div>
-                      <input
-                        className="field w-full px-3 py-1.5 text-xs"
-                        placeholder="Prep note (diced, minced…)"
-                        aria-label="Preparation note"
-                        value={row.preparation_note ?? ""}
-                        onChange={(e) =>
-                          updateIngredient(index, {
-                            preparation_note: e.target.value || null,
-                          })
-                        }
-                      />
-                    </div>
-                  ))}
-                </CollapsibleSection>
-              );
-            })}
-            {ingredients.every((row) => !row.name.trim()) && ingredients.length <= 1 ? (
+      <section className="grid gap-8 lg:grid-cols-2 lg:items-start lg:gap-8 xl:gap-10">
+        <div className={`min-w-0 ${activeTab === "ingredients" ? "block" : "hidden lg:block"}`}>
+          <CollapsibleSection
+            title="Ingredients"
+            count={ingredients.filter((row) => row.name.trim()).length || undefined}
+            defaultOpen
+            level="section"
+            actions={
               <button
                 type="button"
-                className="flex w-full items-center justify-center gap-2 rounded-[2px] border border-dashed border-ink/15 py-10 text-sm font-semibold text-ink/40 transition hover:border-tomato hover:text-tomato"
-                onClick={() => addIngredient("Produce")}
+                className="btn-secondary px-3 py-2 text-[10px]"
+                onClick={() => addIngredient("Other")}
               >
-                <Plus size={16} /> Add your first ingredient
+                <Plus size={14} /> Add
               </button>
-            ) : null}
-            <div className="flex flex-wrap gap-2 pt-1">
-              {INGREDIENT_CATEGORIES.filter(
-                (category) => (ingredientsByCategory.get(category) ?? []).length === 0,
-              ).map((category) => (
-                <button
-                  key={category}
-                  type="button"
-                  className="chip text-ink/45 hover:border-tomato/30 hover:text-tomato"
-                  onClick={() => addIngredient(category)}
-                >
-                  <Plus size={12} /> {category}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="min-w-0 space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="font-editorial text-3xl font-semibold">Directions</h2>
-            <button type="button" className="btn-secondary px-3 py-2 text-[10px]" onClick={addTask}>
-              <Plus size={14} /> Task
-            </button>
-          </div>
-          <div className="space-y-3">
-            {stepsByTask.order.map((taskName) => {
-              const rows = stepsByTask.map.get(taskName) ?? [];
-              const taskMinutes = rows.reduce(
-                (sum, { row }) => sum + (row.duration_minutes ?? 0),
-                0,
-              );
-              return (
-                <CollapsibleSection
-                  key={taskName}
-                  title={taskName}
-                  count={rows.length}
-                  defaultOpen
-                  actions={
-                    <>
-                      {taskMinutes > 0 ? (
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-ink/35">
-                          {formatMinutes(taskMinutes)}
-                        </span>
-                      ) : null}
+            }
+          >
+            <div className="space-y-3">
+              {INGREDIENT_CATEGORIES.map((category) => {
+                const rows = ingredientsByCategory.get(category) ?? [];
+                if (rows.length === 0) return null;
+                return (
+                  <CollapsibleSection
+                    key={category}
+                    title={category}
+                    count={rows.length}
+                    defaultOpen
+                    actions={
                       <button
                         type="button"
                         className="btn-icon h-8 w-8"
-                        aria-label={`Add step to ${taskName}`}
-                        onClick={() => addStep(taskName)}
+                        aria-label={`Add ${category} ingredient`}
+                        onClick={() => addIngredient(category)}
                       >
                         <Plus size={14} />
                       </button>
-                    </>
-                  }
-                >
-                  <label className="mb-1 block">
-                    <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-ink/40">
-                      Task name
-                    </span>
-                    <input
-                      className="field w-full py-2"
-                      defaultValue={taskName}
-                      key={taskName}
-                      onBlur={(e) => renameTask(taskName, e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.currentTarget.blur();
-                        }
-                      }}
-                    />
-                  </label>
-                  {rows.length === 0 ? (
-                    <p className="text-xs text-ink/40">No steps in this task yet.</p>
-                  ) : null}
-                  {rows.map(({ index, row }, localIndex) => (
-                    <article
-                      key={row.id ?? `step-${index}`}
-                      className="space-y-3 rounded-[2px] border border-ink/10 bg-white/70 p-4"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-ink/35">
-                          Step {localIndex + 1}
-                        </span>
-                        <div className="flex gap-1">
-                          <button
-                            type="button"
-                            className="btn-icon h-8 w-8"
-                            aria-label="Move step up"
-                            onClick={() => moveRow(steps, setSteps, index, -1)}
-                          >
-                            <ArrowUp size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            className="btn-icon h-8 w-8"
-                            aria-label="Move step down"
-                            onClick={() => moveRow(steps, setSteps, index, 1)}
-                          >
-                            <ArrowDown size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            className="btn-icon h-8 w-8"
-                            aria-label="Remove step"
-                            onClick={() => setSteps((list) => list.filter((_, i) => i !== index))}
-                          >
-                            <X size={14} />
-                          </button>
-                        </div>
-                      </div>
-                      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_5.5rem]">
-                        <label className="min-w-0">
-                          <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-ink/40">
-                            Label
-                          </span>
+                    }
+                  >
+                    {rows.map(({ index, row }) => (
+                      <div
+                        key={row.id ?? `ing-${index}`}
+                        className="space-y-1.5 rounded-[2px] border border-tomato/20 bg-tomato/[0.04] px-2.5 py-2"
+                      >
+                        <div className="flex items-center gap-2">
+                        <input
+                          className="field min-w-0 flex-1 basis-0 px-3 py-2"
+                          placeholder="Ingredient"
+                          aria-label="Ingredient name"
+                          value={row.name}
+                          onChange={(e) => updateIngredient(index, { name: e.target.value })}
+                          onBlur={() => {
+                            void finalizeIngredientRow(index);
+                          }}
+                        />
+                        <input
+                          className="field w-16 shrink-0 px-2 py-2 text-center"
+                          type="number"
+                          step="0.01"
+                          placeholder="Qty"
+                          aria-label="Quantity"
+                          value={row.quantity ?? ""}
+                          onChange={(e) =>
+                            updateIngredient(index, {
+                              quantity: e.target.value === "" ? null : Number(e.target.value),
+                            })
+                          }
+                          onBlur={(e) => {
+                            const next =
+                              e.target.value === "" ? null : roundQuantity(Number(e.target.value));
+                            updateIngredient(index, { quantity: next });
+                          }}
+                        />
+                        <input
+                          className="field w-14 shrink-0 px-2 py-2 text-center"
+                          placeholder="Unit"
+                          aria-label="Unit"
+                          value={row.unit ?? ""}
+                          onChange={(e) => updateIngredient(index, { unit: e.target.value })}
+                          onBlur={() => {
+                            void finalizeIngredientRow(index);
+                          }}
+                        />
+                        <select
+                          className="field w-[6.5rem] shrink-0 px-2 py-2 text-xs"
+                          value={row.category || "Other"}
+                          onChange={(e) => updateIngredient(index, { category: e.target.value })}
+                          aria-label="Category"
+                        >
+                          {INGREDIENT_CATEGORIES.map((name) => (
+                            <option key={name} value={name}>
+                              {name}
+                            </option>
+                          ))}
+                        </select>
+                        <label
+                          className="flex shrink-0 items-center gap-1.5 text-[11px] font-semibold text-ink/50"
+                          title="Pantry staple"
+                        >
                           <input
-                            className="field w-full min-w-0 py-2.5"
-                            placeholder="Step label"
-                            value={row.title}
-                            onChange={(e) => updateStep(index, { title: e.target.value })}
-                          />
-                        </label>
-                        <label>
-                          <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-ink/40">
-                            Min
-                          </span>
-                          <input
-                            className="field w-full py-2.5"
-                            type="number"
-                            min={0}
-                            placeholder="0"
-                            value={row.duration_minutes ?? ""}
+                            type="checkbox"
+                            checked={Boolean(row.pantry_flag)}
                             onChange={(e) =>
-                              updateStep(index, {
-                                duration_minutes:
-                                  e.target.value === "" ? null : Number(e.target.value),
-                              })
+                              updateIngredient(index, { pantry_flag: e.target.checked })
                             }
                           />
+                          Pantry
                         </label>
-                      </div>
-                      <label className="block">
-                        <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-ink/40">
-                          Instructions
-                        </span>
-                        <textarea
-                          className="field min-h-28 w-full resize-y py-2.5 leading-relaxed"
-                          placeholder="Full step instructions…"
-                          value={row.description ?? ""}
-                          onChange={(e) => updateStep(index, { description: e.target.value })}
+                        <button
+                          type="button"
+                          className="btn-icon h-9 w-9 shrink-0"
+                          aria-label="Remove ingredient"
+                          onClick={() =>
+                            setIngredients((list) => list.filter((_, i) => i !== index))
+                          }
+                        >
+                          <X size={14} />
+                        </button>
+                        </div>
+                        <input
+                          className="field w-full px-3 py-1.5 text-xs"
+                          placeholder="Prep note (diced, minced…)"
+                          aria-label="Preparation note"
+                          value={row.preparation_note ?? ""}
+                          onChange={(e) =>
+                            updateIngredient(index, {
+                              preparation_note: e.target.value || null,
+                            })
+                          }
                         />
-                      </label>
-                      {stepsByTask.order.length > 1 ? (
-                        <label className="flex flex-wrap items-center gap-2 border-t border-ink/8 pt-3">
-                          <span className="text-[10px] font-bold uppercase tracking-widest text-ink/40">
-                            Move to
-                          </span>
-                          <select
-                            className="field max-w-full py-1.5 text-xs sm:max-w-[12rem]"
-                            value={row.task ?? "Cooking"}
-                            onChange={(e) => updateStep(index, { task: e.target.value })}
-                          >
-                            {stepsByTask.order.map((name) => (
-                              <option key={name} value={name}>
-                                {name}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      ) : null}
-                    </article>
-                  ))}
+                      </div>
+                    ))}
+                  </CollapsibleSection>
+                );
+              })}
+              {ingredients.every((row) => !row.name.trim()) && ingredients.length <= 1 ? (
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-center gap-2 rounded-[2px] border border-dashed border-ink/15 py-10 text-sm font-semibold text-ink/40 transition hover:border-tomato hover:text-tomato"
+                  onClick={() => addIngredient("Produce")}
+                >
+                  <Plus size={16} /> Add your first ingredient
+                </button>
+              ) : null}
+              <div className="flex flex-wrap gap-2 pt-1">
+                {INGREDIENT_CATEGORIES.filter(
+                  (category) => (ingredientsByCategory.get(category) ?? []).length === 0,
+                ).map((category) => (
                   <button
+                    key={category}
                     type="button"
-                    className="flex w-full items-center justify-center gap-2 rounded-[2px] border border-dashed border-ink/12 py-3 text-xs font-bold uppercase tracking-widest text-ink/40 transition hover:border-tomato hover:text-tomato"
-                    onClick={() => addStep(taskName)}
+                    className="chip text-ink/45 hover:border-tomato/30 hover:text-tomato"
+                    onClick={() => addIngredient(category)}
                   >
-                    <Plus size={14} /> Add step
+                    <Plus size={12} /> {category}
                   </button>
-                </CollapsibleSection>
-              );
-            })}
-          </div>
+                ))}
+              </div>
+            </div>
+          </CollapsibleSection>
+        </div>
+
+        <div className={`min-w-0 ${activeTab === "tasks" ? "block" : "hidden lg:block"}`}>
+          <CollapsibleSection
+            title="Tasks"
+            count={stepsByTask.order.length || undefined}
+            defaultOpen
+            level="section"
+            actions={
+              <button type="button" className="btn-secondary px-3 py-2 text-[10px]" onClick={addTask}>
+                <Plus size={14} /> Task
+              </button>
+            }
+          >
+            <div className="space-y-3">
+              {stepsByTask.order.map((taskName) => {
+                const rows = stepsByTask.map.get(taskName) ?? [];
+                const taskMinutes = rows.reduce(
+                  (sum, { row }) => sum + (row.duration_minutes ?? 0),
+                  0,
+                );
+                return (
+                  <CollapsibleSection
+                    key={taskName}
+                    title={taskName}
+                    count={rows.length}
+                    defaultOpen
+                    actions={
+                      <>
+                        {taskMinutes > 0 ? (
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-ink/35">
+                            {formatMinutes(taskMinutes)}
+                          </span>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="btn-icon h-8 w-8"
+                          aria-label={`Add step to ${taskName}`}
+                          onClick={() => addStep(taskName)}
+                        >
+                          <Plus size={14} />
+                        </button>
+                      </>
+                    }
+                  >
+                    <label className="mb-1 block">
+                      <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-ink/40">
+                        Task name
+                      </span>
+                      <input
+                        className="field w-full py-2"
+                        defaultValue={taskName}
+                        key={taskName}
+                        onBlur={(e) => renameTask(taskName, e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.currentTarget.blur();
+                          }
+                        }}
+                      />
+                    </label>
+                    {rows.length === 0 ? (
+                      <p className="text-xs text-ink/40">No steps in this task yet.</p>
+                    ) : null}
+                    {rows.map(({ index, row }, localIndex) => (
+                      <details key={row.id ?? `step-${index}`} open className="group overflow-hidden rounded-[2px] border border-ink/10 bg-white/70">
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden">
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-ink/45">
+                            Step {localIndex + 1} · {row.title || "Untitled step"}
+                          </span>
+                          <ChevronDown size={15} className="shrink-0 text-ink/35 transition group-open:rotate-180" />
+                        </summary>
+                        <article className="space-y-3 border-t border-ink/8 p-4">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-ink/35">
+                            Step {localIndex + 1}
+                          </span>
+                          <div className="flex gap-1">
+                            <button
+                              type="button"
+                              className="btn-icon h-8 w-8"
+                              aria-label="Move step up"
+                              onClick={() => moveRow(steps, setSteps, index, -1)}
+                            >
+                              <ArrowUp size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-icon h-8 w-8"
+                              aria-label="Move step down"
+                              onClick={() => moveRow(steps, setSteps, index, 1)}
+                            >
+                              <ArrowDown size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-icon h-8 w-8"
+                              aria-label="Remove step"
+                              onClick={() => setSteps((list) => list.filter((_, i) => i !== index))}
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_5.5rem]">
+                          <label className="min-w-0">
+                            <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-ink/40">
+                              Label
+                            </span>
+                            <input
+                              className="field w-full min-w-0 py-2.5"
+                              placeholder="Step label"
+                              value={row.title}
+                              onChange={(e) => updateStep(index, { title: e.target.value })}
+                            />
+                          </label>
+                          <label>
+                            <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-ink/40">
+                              Min
+                            </span>
+                            <input
+                              className="field w-full py-2.5"
+                              type="number"
+                              min={0}
+                              placeholder="0"
+                              value={row.duration_minutes ?? ""}
+                              onChange={(e) =>
+                                updateStep(index, {
+                                  duration_minutes:
+                                    e.target.value === "" ? null : Number(e.target.value),
+                                })
+                              }
+                            />
+                          </label>
+                        </div>
+                        <label className="block">
+                          <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-ink/40">
+                            Instructions
+                          </span>
+                          <textarea
+                            className="field min-h-28 w-full resize-y py-2.5 leading-relaxed"
+                            placeholder="Full step instructions…"
+                            value={row.description ?? ""}
+                            onChange={(e) => updateStep(index, { description: e.target.value })}
+                          />
+                        </label>
+                        {stepsByTask.order.length > 1 ? (
+                          <label className="flex flex-wrap items-center gap-2 border-t border-ink/8 pt-3">
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-ink/40">
+                              Move to
+                            </span>
+                            <select
+                              className="field max-w-full py-1.5 text-xs sm:max-w-[12rem]"
+                              value={row.task ?? "Cooking"}
+                              onChange={(e) => updateStep(index, { task: e.target.value })}
+                            >
+                              {stepsByTask.order.map((name) => (
+                                <option key={name} value={name}>
+                                  {name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        ) : null}
+                        </article>
+                      </details>
+                    ))}
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-center gap-2 rounded-[2px] border border-dashed border-ink/12 py-3 text-xs font-bold uppercase tracking-widest text-ink/40 transition hover:border-tomato hover:text-tomato"
+                      onClick={() => addStep(taskName)}
+                    >
+                      <Plus size={14} /> Add step
+                    </button>
+                  </CollapsibleSection>
+                );
+              })}
+            </div>
+          </CollapsibleSection>
         </div>
       </section>
 
       {/* Misc details — collapsed by default */}
-      <CollapsibleSection title="Recipe details" count={undefined} defaultOpen={false}>
-        <div className="grid gap-4 sm:grid-cols-2">
+      <div className={activeTab === "details" ? "block" : "hidden lg:block"}>
+        <CollapsibleSection title="Recipe details" count={undefined} defaultOpen={false}>
+          <div className="grid gap-4 sm:grid-cols-2">
           <label className="sm:col-span-2">
             <span className="mb-2 block text-xs font-semibold">Description</span>
             <textarea
@@ -1158,8 +1481,9 @@ export function RecipeEditor({
             <span className="mb-2 block text-xs font-semibold">Personal notes</span>
             <textarea className="field min-h-20" value={notes} onChange={(e) => setNotes(e.target.value)} />
           </label>
-        </div>
-      </CollapsibleSection>
+          </div>
+        </CollapsibleSection>
+      </div>
     </div>
   );
 }

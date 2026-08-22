@@ -1,5 +1,5 @@
 import { GroceryOwnedToggle, GroceryPurchasedToggle } from "@/components/party/shopping-toggles";
-import { regenerateShoppingList } from "@/lib/actions/shopping";
+import { ShoppingSyncBanner } from "@/components/party/shopping-sync-banner";
 import { getPartyCostSummary } from "@/lib/party/cost-summary";
 import { formatGroceryQuantity } from "@/lib/recipes/quantity";
 import { createClient } from "@/lib/supabase/server";
@@ -10,37 +10,23 @@ export default async function ShoppingPage({ params }: { params: Promise<{ party
   const { partyId } = await params;
   const supabase = await createClient();
 
-  let { data: party } = await supabase
-    .from("parties")
-    .select("id, planning_guest_count, shopping_dirty")
-    .eq("id", partyId)
-    .maybeSingle();
-  if (!party) notFound();
-
-  // Fallback only — normal path regenerates via after() on mutations.
-  if (party.shopping_dirty) {
-    try {
-      await regenerateShoppingList(partyId);
-    } catch {
-      // Continue with existing list if regen fails.
-    }
-    const refreshed = await supabase
+  const [{ data: party }, { data: items }, { data: menuItems }] = await Promise.all([
+    supabase
       .from("parties")
       .select("id, planning_guest_count, shopping_dirty")
       .eq("id", partyId)
-      .maybeSingle();
-    if (refreshed.data) party = refreshed.data;
-  }
-
-  const summary = await getPartyCostSummary(supabase, partyId);
-
-  const { data: items } = await supabase
-    .from("grocery_items")
-    .select("*")
-    .eq("party_id", partyId)
-    .order("sort_order");
+      .maybeSingle(),
+    supabase.from("grocery_items").select("*").eq("party_id", partyId).order("sort_order"),
+    supabase.from("menu_items").select("recipe_id, sort_order").eq("party_id", partyId).order("sort_order"),
+  ]);
+  if (!party) notFound();
 
   const allItems = items ?? [];
+  const summary = await getPartyCostSummary(supabase, partyId, {
+    party,
+    grocery: allItems,
+    menuItems: menuItems ?? [],
+  });
   const sourceIds = Array.from(new Set(allItems.flatMap((item) => item.source_recipe_ids ?? [])));
   const { data: sourceRecipes } = sourceIds.length
     ? await supabase.from("recipes").select("id, title").in("id", sourceIds)
@@ -62,6 +48,7 @@ export default async function ShoppingPage({ params }: { params: Promise<{ party
 
   return (
     <div className="space-y-8">
+      {party.shopping_dirty ? <ShoppingSyncBanner partyId={partyId} /> : null}
       <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <h2 className="font-editorial text-5xl font-semibold">Grocery List</h2>

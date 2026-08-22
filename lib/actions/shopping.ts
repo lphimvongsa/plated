@@ -5,10 +5,14 @@ import { ensureIngredientPrice } from "@/lib/recipes/ensure-price";
 import { roundQuantity } from "@/lib/recipes/quantity";
 import { canonicalKey, scaleQuantity } from "@/lib/recipes/units";
 import {
+  convertCatalogQuantity,
   convertToPreferredWeight,
+  normalizeUnitToken,
+  resolveCatalogIngredient,
   type WeightSystem,
 } from "@/lib/recipes/weight-convert";
 import { createClient } from "@/lib/supabase/server";
+import { claimPartyRefresh, finishPartyRefresh } from "@/lib/party/refresh-claim";
 
 type ConsolidatedItem = {
   canonical_key: string;
@@ -40,7 +44,7 @@ async function getWeightSystem(
   return data?.preferred_measurement === "Metric" ? "Metric" : "US";
 }
 
-export async function regenerateShoppingList(partyId: string) {
+async function regenerateShoppingListUnlocked(partyId: string) {
   const supabase = await createClient();
   const system = await getWeightSystem(supabase);
 
@@ -73,11 +77,31 @@ export async function regenerateShoppingList(partyId: string) {
       ingredientsByRecipe.set(ing.recipe_id, list);
     }
 
+    const knownKeys = [...new Set(
+      (allIngredients ?? []).map((ingredient) => ingredient.canonical_key).filter((key): key is string => Boolean(key)),
+    )];
+    const { data: cachedPriceRows } = knownKeys.length
+      ? await supabase
+          .from("ingredient_prices")
+          .select("canonical_key, unit, price_per_unit, source")
+          .in("canonical_key", knownKeys)
+          .eq("currency", "USD")
+          .eq("market", "US")
+      : { data: [] };
+    const cachedPrices = new Map(
+      (cachedPriceRows ?? []).map((row) => [
+        `${row.canonical_key}::${normalizeUnitToken(row.unit)}`,
+        row,
+      ]),
+    );
+    const ingredientUpdates: Array<Promise<{ error: { message: string } | null }>> = [];
+
     for (const recipe of recipes ?? []) {
       for (const ing of ingredientsByRecipe.get(recipe.id) ?? []) {
         if (ing.pantry_flag) continue;
 
         const converted = await convertToPreferredWeight({
+          supabase,
           name: ing.name,
           quantity: ing.quantity,
           unit: ing.unit,
@@ -85,41 +109,61 @@ export async function regenerateShoppingList(partyId: string) {
         });
 
         // Persist conversion on the recipe ingredient when count/misc → weight
-        if (
-          converted.converted &&
-          (converted.quantity !== ing.quantity || converted.unit !== ing.unit)
-        ) {
-          await supabase
-            .from("ingredients")
-            .update({
-              quantity: converted.quantity,
-              unit: converted.unit,
-            })
-            .eq("id", ing.id);
-        }
+        // Conversion is derived for this list only; recipe source units remain untouched.
 
-        const key = ing.canonical_key ?? canonicalKey(ing.name);
-        const unit = converted.unit ?? null;
+        const catalog = converted.catalog ?? await resolveCatalogIngredient(supabase, ing.name);
+        const preferredUnit = catalog?.preferred_shopping_unit;
+        let normalizedQuantity = converted.quantity ?? 0;
+        let unit = normalizeUnitToken(converted.unit) || null;
+        if (preferredUnit && unit) {
+          const direct = convertCatalogQuantity(normalizedQuantity, unit, preferredUnit, catalog.density_g_per_ml);
+          if (direct != null) {
+            normalizedQuantity = direct;
+            unit = preferredUnit;
+          } else if (catalog.keep_count && preferredUnit === "each") {
+            const [{ data: eachWeight }, { data: sourceWeight }] = await Promise.all([
+              supabase.from("ingredient_unit_weights").select("grams_per_unit")
+                .eq("canonical_key", catalog.canonical_key).eq("unit", "each").maybeSingle(),
+              supabase.from("ingredient_unit_weights").select("grams_per_unit")
+                .eq("canonical_key", catalog.canonical_key).eq("unit", unit).maybeSingle(),
+            ]);
+            const grams = sourceWeight?.grams_per_unit
+              ? normalizedQuantity * sourceWeight.grams_per_unit
+              : convertCatalogQuantity(normalizedQuantity, unit, "g", catalog.density_g_per_ml);
+            if (grams != null && eachWeight?.grams_per_unit) {
+              normalizedQuantity = grams / eachWeight.grams_per_unit;
+              unit = "each";
+            }
+          }
+        }
+        const key = converted.canonicalKey ?? ing.canonical_key ?? canonicalKey(ing.name);
         const mapKey = `${key}::${unit ?? ""}`;
         const scaledQty =
           roundQuantity(
-            scaleQuantity(converted.quantity, recipe.servings, party.planning_guest_count) ?? 0,
+            scaleQuantity(normalizedQuantity, recipe.servings, party.planning_guest_count) ?? 0,
           ) ?? 0;
 
-        const ensured = await ensureIngredientPrice(supabase, key, unit, {
-          category: ing.category,
-          system,
-        });
+        const cached = cachedPrices.get(`${key}::${normalizeUnitToken(unit)}`);
+        const ensured = cached
+          ? {
+              canonical_key: cached.canonical_key,
+              unit: normalizeUnitToken(cached.unit),
+              price_per_unit: cached.price_per_unit,
+              source: cached.source,
+            }
+          : await ensureIngredientPrice(supabase, key, unit, {
+              category: ing.category,
+              system,
+            });
         const unitCost = ensured?.price_per_unit ?? ing.estimated_unit_cost ?? 0;
 
         if (ensured) {
-          await supabase
-            .from("ingredients")
-            .update({
+          ingredientUpdates.push(
+            Promise.resolve(supabase.from("ingredients").update({
               estimated_unit_cost: ensured.price_per_unit,
               canonical_key: ensured.canonical_key,
-            })
-            .eq("id", ing.id);
+            }).eq("id", ing.id)).then((result) => ({ error: result.error })),
+          );
         }
 
         const lineCost = roundQuantity(scaledQty * unitCost) ?? 0;
@@ -143,6 +187,10 @@ export async function regenerateShoppingList(partyId: string) {
         }
       }
     }
+
+    const ingredientUpdateResults = await Promise.all(ingredientUpdates);
+    const ingredientUpdateError = ingredientUpdateResults.find((result) => result.error)?.error;
+    if (ingredientUpdateError) return { error: ingredientUpdateError.message };
   }
 
   const { data: existingItems } = await supabase
@@ -187,19 +235,38 @@ export async function regenerateShoppingList(partyId: string) {
   }
 
   const manualSortOffset = generatedRows.length;
-  for (const [index, item] of manualItems.entries()) {
-    await supabase
-      .from("grocery_items")
-      .update({ sort_order: manualSortOffset + index })
-      .eq("id", item.id);
-  }
-
-  await supabase.from("parties").update({ shopping_dirty: false }).eq("id", partyId);
+  const manualUpdates = await Promise.all(
+    manualItems.map((item, index) =>
+      supabase
+        .from("grocery_items")
+        .update({ sort_order: manualSortOffset + index })
+        .eq("id", item.id),
+    ),
+  );
+  const manualUpdateError = manualUpdates.find((result) => result.error)?.error;
+  if (manualUpdateError) return { error: manualUpdateError.message };
 
   revalidatePath(`/app/parties/${partyId}/shopping`);
   revalidatePath(`/app/parties/${partyId}/costs`);
   revalidatePath(`/app/parties/${partyId}/menu`);
   return { error: null, itemCount: generatedRows.length + manualItems.length };
+}
+
+export async function regenerateShoppingList(partyId: string) {
+  const supabase = await createClient();
+  const claim = await claimPartyRefresh(supabase, partyId, "shopping");
+  if (!claim.token) return { error: claim.error };
+
+  let success = false;
+  try {
+    const result = await regenerateShoppingListUnlocked(partyId);
+    success = !result.error;
+    return result;
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Could not regenerate shopping data." };
+  } finally {
+    await finishPartyRefresh(supabase, partyId, "shopping", claim.token, success);
+  }
 }
 
 export async function addManualGroceryItem(

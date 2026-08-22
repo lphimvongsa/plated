@@ -2,11 +2,9 @@
 
 const ALIASES: Array<{ pattern: RegExp; canonical: string }> = [
   { pattern: /\b(evoo|extra[- ]virgin olive oil|extra virgin olive oil)\b/i, canonical: "olive oil" },
-  { pattern: /\b(kosher salt|sea salt|table salt|fine salt|flaky salt)\b/i, canonical: "salt" },
+  { pattern: /\bfine salt\b/i, canonical: "table salt" },
   { pattern: /\b(black pepper|freshly (?:cracked|ground) pepper|ground pepper)\b/i, canonical: "black pepper" },
-  { pattern: /\b(all[- ]purpose flour|ap flour|plain flour)\b/i, canonical: "flour" },
-  { pattern: /\b(unsalted butter|salted butter)\b/i, canonical: "butter" },
-  { pattern: /\b(yellow onion|white onion|sweet onion|red onion)\b/i, canonical: "onion" },
+  { pattern: /\b(all[- ]purpose flour|ap flour|plain flour)\b/i, canonical: "all purpose flour" },
   { pattern: /\b(garlic cloves?|minced garlic)\b/i, canonical: "garlic" },
   { pattern: /\b(chicken (?:stock|broth)|low[- ]sodium chicken (?:stock|broth))\b/i, canonical: "chicken broth" },
   { pattern: /\b(beef (?:stock|broth))\b/i, canonical: "beef broth" },
@@ -16,7 +14,9 @@ const ALIASES: Array<{ pattern: RegExp; canonical: string }> = [
   { pattern: /\b(granulated sugar|white sugar)\b/i, canonical: "sugar" },
   { pattern: /\b(active dry yeast|instant yeast)\b/i, canonical: "yeast" },
   { pattern: /\b(thick[- ]cut bacon|bacon strips?)\b/i, canonical: "bacon" },
-  { pattern: /\b(yukon gold potatoes?|russet potatoes?|red potatoes?)\b/i, canonical: "potatoes" },
+  { pattern: /\byukon gold potatoes?\b/i, canonical: "yukon gold potato" },
+  { pattern: /\brusset potatoes?\b/i, canonical: "russet potato" },
+  { pattern: /\bred potatoes?\b/i, canonical: "red potato" },
   { pattern: /\b(chopped clams|canned clams)\b/i, canonical: "clams" },
 ];
 

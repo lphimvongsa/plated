@@ -28,6 +28,16 @@ export type PartyCostSummary = {
   dishTotal: number;
 };
 
+type CostSummarySeed = {
+  party?: { planning_guest_count: number; shopping_dirty: boolean } | null;
+  grocery?: Array<{
+    estimated_cost: number | null;
+    already_owned: boolean;
+    purchased: boolean;
+  }>;
+  menuItems?: Array<{ recipe_id: string; sort_order: number }>;
+};
+
 /**
  * Single read model for Menu / Groceries / Costs totals.
  * Estimated total always comes from grocery_items for the current menu scale.
@@ -36,23 +46,33 @@ export type PartyCostSummary = {
 export async function getPartyCostSummary(
   supabase: SupabaseClient<Database>,
   partyId: string,
+  seed: CostSummarySeed = {},
 ): Promise<PartyCostSummary> {
-  const [{ data: party }, { data: grocery }, { data: menuItems }] = await Promise.all([
-    supabase
-      .from("parties")
-      .select("planning_guest_count, shopping_dirty")
-      .eq("id", partyId)
-      .maybeSingle(),
-    supabase
-      .from("grocery_items")
-      .select("estimated_cost, already_owned, purchased")
-      .eq("party_id", partyId),
-    supabase
-      .from("menu_items")
-      .select("recipe_id, sort_order")
-      .eq("party_id", partyId)
-      .order("sort_order"),
+  const [partyResult, groceryResult, menuResult] = await Promise.all([
+    seed.party !== undefined
+      ? Promise.resolve({ data: seed.party })
+      : supabase
+          .from("parties")
+          .select("planning_guest_count, shopping_dirty")
+          .eq("id", partyId)
+          .maybeSingle(),
+    seed.grocery !== undefined
+      ? Promise.resolve({ data: seed.grocery })
+      : supabase
+          .from("grocery_items")
+          .select("estimated_cost, already_owned, purchased")
+          .eq("party_id", partyId),
+    seed.menuItems !== undefined
+      ? Promise.resolve({ data: seed.menuItems })
+      : supabase
+          .from("menu_items")
+          .select("recipe_id, sort_order")
+          .eq("party_id", partyId)
+          .order("sort_order"),
   ]);
+  const party = partyResult.data;
+  const grocery = groceryResult.data;
+  const menuItems = menuResult.data;
 
   const guestCount = Math.max(1, party?.planning_guest_count || 1);
   const shoppingDirty = Boolean(party?.shopping_dirty);

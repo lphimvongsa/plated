@@ -1,221 +1,164 @@
 import "server-only";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/database.types";
 import { roundQuantity } from "@/lib/recipes/quantity";
 import { standardizeIngredientKey } from "@/lib/recipes/standardize";
+import { convertVolume, convertWeight, isVolumeUnit, isWeightUnit } from "@/lib/recipes/units";
 
 export type WeightSystem = "US" | "Metric";
 export type WeightUnit = "oz" | "g";
 
-const COUNT_OR_MISC_UNITS = new Set([
-  "each",
-  "strip",
-  "strips",
-  "stalk",
-  "stalks",
-  "rib",
-  "ribs",
-  "clove",
-  "cloves",
-  "piece",
-  "pieces",
-  "cube",
-  "cubes",
-  "leaf",
-  "leaves",
-  "sprig",
-  "sprigs",
-  "head",
-  "heads",
-  "bunch",
-  "bunches",
-  "can",
-  "cans",
-  "package",
-  "packages",
-  "pkg",
-  "pinch",
-  "pinches",
-  "whole",
-  "medium",
-  "large",
-  "small",
+const UNIT_ALIASES: Record<string, string> = {
+  cloves: "clove", strips: "strip", stalks: "stalk", ribs: "rib", pieces: "piece",
+  leaves: "leaf", sprigs: "sprig", heads: "head", bunches: "bunch", cans: "can",
+  packages: "package", pkg: "package", eggs: "each", whole: "each",
+  ounces: "oz", ounce: "oz", pounds: "lb", pound: "lb", grams: "g", gram: "g",
+  teaspoons: "tsp", teaspoon: "tsp", tablespoons: "tbsp", tablespoon: "tbsp",
+  cups: "cup", milliliters: "ml", milliliter: "ml", liters: "l", liter: "l",
+};
+
+const COUNT_UNITS = new Set([
+  "each", "strip", "stalk", "rib", "clove", "piece", "cube", "leaf", "sprig",
+  "head", "bunch", "can", "package", "pinch", "medium", "large", "small", "dozen",
 ]);
 
-/** Approximate edible grams per 1 count-unit for common pantry items (fallback without AI). */
-const FALLBACK_GRAMS: Record<string, Partial<Record<string, number>>> = {
-  garlic: { clove: 3, each: 3 },
-  onion: { each: 150 },
-  "bay leaf": { each: 0.2, leaf: 0.2 },
-  bacon: { strip: 28, each: 28 },
-  celery: { stalk: 40, rib: 40 },
-  egg: { each: 50 },
-  eggs: { each: 50 },
-  lemon: { each: 85 },
-  lime: { each: 70 },
-  potato: { each: 170 },
-  potatoes: { each: 170 },
-  parsley: { bunch: 30, sprig: 1 },
-  "chicken bouillon": { cube: 4 },
-  "bouillon cube": { cube: 4 },
+type CatalogIngredient = {
+  canonical_key: string;
+  display_name: string;
+  category: string;
+  preferred_shopping_unit: string;
+  keep_count: boolean;
+  density_g_per_ml: number | null;
 };
-
-type AiConfig = {
-  apiKey: string;
-  baseUrl: string;
-  model: string;
-};
-
-function getAiConfig(): AiConfig | null {
-  const apiKey = process.env.AI_API_KEY?.trim();
-  if (!apiKey) return null;
-  return {
-    apiKey,
-    baseUrl: (process.env.AI_BASE_URL?.trim() || "https://api.openai.com/v1").replace(/\/$/, ""),
-    model: process.env.AI_MODEL?.trim() || "gpt-4o-mini",
-  };
-}
 
 export function normalizeUnitToken(unit: string | null | undefined): string {
-  return (unit ?? "").trim().toLowerCase().replace(/\.$/, "");
+  const token = (unit ?? "").trim().toLowerCase().replace(/\.$/, "");
+  return UNIT_ALIASES[token] ?? token;
 }
 
 export function isCountOrMiscUnit(unit: string | null | undefined): boolean {
   const token = normalizeUnitToken(unit);
-  if (!token) return true; // unitless → treat as count/misc needing weight
-  return COUNT_OR_MISC_UNITS.has(token);
+  return !token || COUNT_UNITS.has(token);
 }
 
 export function preferredWeightUnit(system: WeightSystem): WeightUnit {
   return system === "Metric" ? "g" : "oz";
 }
 
-export function gramsToPreferred(grams: number, system: WeightSystem): { quantity: number; unit: WeightUnit } {
-  if (system === "Metric") {
-    return { quantity: roundQuantity(grams) ?? grams, unit: "g" };
-  }
-  return { quantity: roundQuantity(grams / 28.3495) ?? grams / 28.3495, unit: "oz" };
+export function gramsToPreferred(grams: number, system: WeightSystem) {
+  const quantity = system === "Metric" ? grams : grams / 28.3495;
+  return { quantity: roundQuantity(quantity) ?? quantity, unit: preferredWeightUnit(system) };
 }
 
-function fallbackGrams(name: string, unit: string): number | null {
-  const key = standardizeIngredientKey(name);
-  const unitToken = normalizeUnitToken(unit) || "each";
-  const byIngredient = FALLBACK_GRAMS[key];
-  if (byIngredient?.[unitToken] != null) return byIngredient[unitToken]!;
-  // Generic count fallbacks
-  if (unitToken === "pinch") return 0.3;
-  if (unitToken === "sprig") return 1;
-  if (unitToken === "clove") return 3;
-  if (unitToken === "strip") return 28;
-  if (unitToken === "stalk" || unitToken === "rib") return 40;
-  if (unitToken === "cube") return 4;
-  if (unitToken === "leaf") return 0.5;
-  if (unitToken === "each" || unitToken === "whole" || unitToken === "piece") return 28;
-  if (unitToken === "can") return 400;
-  if (unitToken === "package" || unitToken === "pkg") return 340;
-  if (unitToken === "bunch") return 60;
-  if (unitToken === "head") return 500;
-  return null;
+export async function resolveCatalogIngredient(
+  supabase: SupabaseClient<Database>,
+  rawName: string,
+): Promise<CatalogIngredient | null> {
+  const rawKey = standardizeIngredientKey(rawName);
+  const { data: alias } = await supabase
+    .from("ingredient_aliases")
+    .select("canonical_key")
+    .eq("alias_key", rawKey)
+    .maybeSingle();
+  const key = alias?.canonical_key ?? rawKey;
+  const { data } = await supabase
+    .from("grocery_ingredients")
+    .select("canonical_key, display_name, category, preferred_shopping_unit, keep_count, density_g_per_ml")
+    .eq("canonical_key", key)
+    .eq("active", true)
+    .maybeSingle();
+  return data ?? null;
+}
+
+async function catalogGramsPerUnit(
+  supabase: SupabaseClient<Database>, key: string, unit: string,
+): Promise<number | null> {
+  const { data } = await supabase.from("ingredient_unit_weights")
+    .select("grams_per_unit").eq("canonical_key", key).eq("unit", unit).maybeSingle();
+  return data?.grams_per_unit ?? null;
+}
+
+function clampAiWeight(unit: string, grams: number): number | null {
+  const ranges: Record<string, [number, number]> = {
+    clove: [0.5, 15], sprig: [0.05, 15], leaf: [0.02, 20], strip: [1, 100],
+    stalk: [2, 400], rib: [2, 400], each: [0.1, 5000], bunch: [5, 1500],
+    head: [20, 5000], can: [50, 2000], package: [10, 5000], pinch: [0.05, 2], cube: [1, 30],
+  };
+  const range = ranges[unit];
+  return Number.isFinite(grams) && grams > 0 && (!range || (grams >= range[0] && grams <= range[1])) ? grams : null;
 }
 
 async function aiGramsPerUnit(name: string, unit: string): Promise<number | null> {
-  const config = getAiConfig();
-  if (!config) return null;
-
-  const response = await fetch(`${config.baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: config.model,
-      temperature: 0.1,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content:
-            'Convert cooking count/misc units to edible weight. Return ONLY JSON {"grams_per_unit": number}. Use typical grocery edible yield for 1 unit (e.g. 1 strip bacon, 1 stalk celery, 1 clove garlic). grams_per_unit must be > 0.',
-        },
-        {
-          role: "user",
-          content: JSON.stringify({
-            ingredient: standardizeIngredientKey(name),
-            unit: normalizeUnitToken(unit) || "each",
-          }),
-        },
-      ],
-    }),
+  const apiKey = process.env.AI_API_KEY?.trim();
+  if (!apiKey) return null;
+  const baseUrl = (process.env.AI_BASE_URL?.trim() || "https://api.openai.com/v1").replace(/\/$/, "");
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: process.env.AI_MODEL?.trim() || "gpt-4o-mini", temperature: 0.1,
+      response_format: { type: "json_object" }, messages: [
+        { role: "system", content: "Return only JSON {\"grams_per_unit\":number}. Estimate edible grams for one stated grocery unit. Be conservative for small chilies, herbs, cloves, and leaves." },
+        { role: "user", content: JSON.stringify({ ingredient: standardizeIngredientKey(name), unit }) },
+      ] }),
   });
-
   if (!response.ok) return null;
-  const payload = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
   try {
-    const parsed = JSON.parse(payload.choices?.[0]?.message?.content ?? "{}") as {
-      grams_per_unit?: unknown;
-    };
-    const grams = Number(parsed.grams_per_unit);
-    return Number.isFinite(grams) && grams > 0 ? grams : null;
-  } catch {
-    return null;
-  }
+    const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+    const grams = Number(JSON.parse(payload.choices?.[0]?.message?.content ?? "{}").grams_per_unit);
+    return clampAiWeight(unit, grams);
+  } catch { return null; }
 }
 
-/**
- * Convert count/misc units (strip, stalk, each, …) into preferred weight (oz or g).
- * Leaves true volume/weight units unchanged.
- */
 export async function convertToPreferredWeight(options: {
+  supabase: SupabaseClient<Database>;
   name: string;
   quantity: number | null;
   unit: string | null;
   system: WeightSystem;
-}): Promise<{ quantity: number | null; unit: string | null; converted: boolean }> {
-  const qty = options.quantity;
-  const unit = options.unit;
+  honorKeepCount?: boolean;
+  allowAi?: boolean;
+}): Promise<{ quantity: number | null; unit: string | null; converted: boolean; canonicalKey: string; catalog: CatalogIngredient | null }> {
+  const catalog = await resolveCatalogIngredient(options.supabase, options.name);
+  const key = catalog?.canonical_key ?? standardizeIngredientKey(options.name);
+  const unit = normalizeUnitToken(options.unit) || "each";
+  const quantity = options.quantity == null || !Number.isFinite(options.quantity) ? 1 : options.quantity;
+  if (catalog?.keep_count && options.honorKeepCount !== false && isCountOrMiscUnit(unit)) {
+    return { quantity: roundQuantity(quantity), unit, converted: false, canonicalKey: key, catalog };
+  }
   if (!isCountOrMiscUnit(unit)) {
-    return { quantity: roundQuantity(qty), unit, converted: false };
+    return { quantity: roundQuantity(options.quantity), unit: options.unit, converted: false, canonicalKey: key, catalog };
   }
-
-  const count = qty == null || !Number.isFinite(qty) || qty <= 0 ? 1 : qty;
-  const unitToken = normalizeUnitToken(unit) || "each";
-  let gramsPer = fallbackGrams(options.name, unitToken);
+  let gramsPer = await catalogGramsPerUnit(options.supabase, key, unit);
+  if (gramsPer == null && unit === "dozen") {
+    const each = await catalogGramsPerUnit(options.supabase, key, "each");
+    gramsPer = each == null ? null : each * 12;
+  }
+  if (gramsPer == null && options.allowAi !== false) gramsPer = await aiGramsPerUnit(options.name, unit);
   if (gramsPer == null) {
-    gramsPer = await aiGramsPerUnit(options.name, unitToken);
+    return { quantity: roundQuantity(options.quantity), unit: options.unit, converted: false, canonicalKey: key, catalog };
   }
-  if (gramsPer == null) {
-    // Last resort: 1 oz / 28 g per count so costing still works
-    gramsPer = options.system === "Metric" ? 28 : 28.3495;
-  }
-
-  const preferred = gramsToPreferred(count * gramsPer, options.system);
-  return {
-    quantity: preferred.quantity,
-    unit: preferred.unit,
-    converted: true,
-  };
+  const preferred = gramsToPreferred(quantity * gramsPer, options.system);
+  return { ...preferred, converted: true, canonicalKey: key, catalog };
 }
 
-/** Convert a unit price between compatible weight units. */
-export function convertWeightPrice(
-  pricePerUnit: number,
-  fromUnit: string,
-  toUnit: string,
-): number | null {
-  const from = normalizeUnitToken(fromUnit);
-  const to = normalizeUnitToken(toUnit);
-  if (from === to) return pricePerUnit;
+export function convertWeightPrice(price: number, fromUnit: string, toUnit: string): number | null {
+  const from = normalizeUnitToken(fromUnit); const to = normalizeUnitToken(toUnit);
+  if (from === to) return price;
+  const grams = convertWeight(1, from, "g");
+  const targetGrams = convertWeight(1, to, "g");
+  return grams == null || targetGrams == null ? null : price * targetGrams / grams;
+}
 
-  const toGrams: Record<string, number> = {
-    g: 1,
-    kg: 1000,
-    oz: 28.3495,
-    lb: 453.592,
-  };
-  if (!(from in toGrams) || !(to in toGrams)) return null;
-  // price is per `from` unit → per gram → per `to` unit
-  const perGram = pricePerUnit / toGrams[from];
-  return roundQuantity(perGram * toGrams[to]);
+export function convertCatalogQuantity(quantity: number, fromUnit: string, toUnit: string, density: number | null): number | null {
+  const from = normalizeUnitToken(fromUnit); const to = normalizeUnitToken(toUnit);
+  if (from === to) return quantity;
+  if (isWeightUnit(from) && isWeightUnit(to)) return convertWeight(quantity, from, to);
+  if (isVolumeUnit(from) && isVolumeUnit(to)) return convertVolume(quantity, from, to);
+  if (density && isVolumeUnit(from) && isWeightUnit(to)) {
+    const ml = convertVolume(quantity, from, "ml"); return ml == null ? null : convertWeight(ml * density, "g", to);
+  }
+  if (density && isWeightUnit(from) && isVolumeUnit(to)) {
+    const grams = convertWeight(quantity, from, "g"); return grams == null ? null : convertVolume(grams / density, "ml", to);
+  }
+  return null;
 }

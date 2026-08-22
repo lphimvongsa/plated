@@ -1,5 +1,5 @@
 import { CostsPanel } from "@/components/party/costs-panel";
-import { regenerateShoppingList } from "@/lib/actions/shopping";
+import { ShoppingSyncBanner } from "@/components/party/shopping-sync-banner";
 import { getPartyCostSummary } from "@/lib/party/cost-summary";
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
@@ -8,32 +8,31 @@ export default async function CostsPage({ params }: { params: Promise<{ partyId:
   const { partyId } = await params;
   const supabase = await createClient();
 
-  const { data: party } = await supabase
-    .from("parties")
-    .select("id, shopping_dirty")
-    .eq("id", partyId)
-    .maybeSingle();
-  if (!party) notFound();
-
-  // Fallback if background refresh has not finished yet.
-  if (party.shopping_dirty) {
-    try {
-      await regenerateShoppingList(partyId);
-    } catch {
-      // Keep reading current grocery snapshot.
-    }
-  }
-
-  const summary = await getPartyCostSummary(supabase, partyId);
-
-  const [{ data: groceryActuals }] = await Promise.all([
-    supabase.from("grocery_items").select("actual_cost").eq("party_id", partyId),
+  const [{ data: party }, { data: grocery }, { data: menuItems }] = await Promise.all([
+    supabase
+      .from("parties")
+      .select("id, planning_guest_count, shopping_dirty")
+      .eq("id", partyId)
+      .maybeSingle(),
+    supabase
+      .from("grocery_items")
+      .select("estimated_cost, actual_cost, already_owned, purchased")
+      .eq("party_id", partyId),
+    supabase.from("menu_items").select("recipe_id, sort_order").eq("party_id", partyId).order("sort_order"),
   ]);
+  if (!party) notFound();
+  const summary = await getPartyCostSummary(supabase, partyId, {
+    party,
+    grocery: grocery ?? [],
+    menuItems: menuItems ?? [],
+  });
 
-  const actualLogged = (groceryActuals ?? []).reduce((sum, item) => sum + (item.actual_cost ?? 0), 0);
+  const actualLogged = (grocery ?? []).reduce((sum, item) => sum + (item.actual_cost ?? 0), 0);
 
   return (
-    <CostsPanel
+    <div className="space-y-8">
+      {party.shopping_dirty ? <ShoppingSyncBanner partyId={partyId} /> : null}
+      <CostsPanel
       estimate={summary.estimatedTotal}
       actualLogged={actualLogged}
       recipes={summary.dishes.map((dish) => ({
@@ -44,6 +43,7 @@ export default async function CostsPage({ params }: { params: Promise<{ partyId:
         servings: dish.servings,
       }))}
       guestCount={summary.guestCount}
-    />
+      />
+    </div>
   );
 }

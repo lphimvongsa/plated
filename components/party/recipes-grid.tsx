@@ -73,9 +73,9 @@ export function RecipesGrid({ recipes, partyId }: { recipes: PartyRecipeCard[]; 
       </div>
       <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
         {filtered.map((recipe) => (
-          <article key={recipe.id} className="card overflow-hidden">
-            <Link href={`/app/parties/${partyId}/recipes/${recipe.id}`} className="group block">
-              <div className="relative h-56 overflow-hidden bg-ink">
+          <article key={recipe.id} className="card flex h-full flex-col overflow-hidden">
+            <Link href={`/app/parties/${partyId}/recipes/${recipe.id}`} className="group flex min-h-0 flex-1 flex-col">
+              <div className="relative h-56 shrink-0 overflow-hidden bg-ink">
                 <img src={recipe.image_url || "/photos/party-04.webp"} alt="" className="h-full w-full object-cover" />
                 <div className="absolute left-4 top-4 flex gap-2">
                   <span className="chip border-paper/20 bg-paper/90">{recipe.course || "Recipe"}</span>
@@ -86,8 +86,11 @@ export function RecipesGrid({ recipes, partyId }: { recipes: PartyRecipeCard[]; 
                   ) : null}
                 </div>
               </div>
-              <div className="p-5">
-                <h3 className="font-editorial text-3xl font-semibold leading-tight transition-colors duration-200 group-hover:text-tomato">
+              <div className="flex flex-1 flex-col p-5">
+                <h3
+                  title={recipe.title}
+                  className="line-clamp-2 min-h-[2.5em] font-editorial text-3xl font-semibold leading-tight transition-colors duration-200 group-hover:text-tomato"
+                >
                   {recipe.title}
                 </h3>
                 <div className="mt-4 flex flex-wrap gap-2">
@@ -99,7 +102,7 @@ export function RecipesGrid({ recipes, partyId }: { recipes: PartyRecipeCard[]; 
                 </div>
               </div>
             </Link>
-            <div className="border-t border-ink/8 px-5 pb-5">
+            <div className="mt-auto border-t border-ink/8 px-5 pb-5">
               <Link href={`/app/parties/${partyId}/recipes/${recipe.id}`} className="btn-secondary mt-4 flex w-full">
                 <PencilLine size={15} /> Edit
               </Link>

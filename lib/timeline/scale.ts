@@ -21,7 +21,16 @@ export type Axis = {
 
 /** How many hours of timeline fit in the visible scrollport. */
 export const VIEWPORT_HOURS = 12;
-export const SNAP_MINUTES = 15;
+/** Placement snaps to this resolution on the timeline. */
+export const SNAP_MINUTES = 5;
+export const VIEW_HOUR_OPTIONS = [1, 3, 6, 12] as const;
+
+/** Minor grid spacing inside each hour column, by zoom level. */
+export function gridTickMinutes(viewHours: number): number {
+  if (viewHours <= 1) return 10;
+  if (viewHours <= 6) return 30;
+  return 60;
+}
 
 const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;

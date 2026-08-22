@@ -24,6 +24,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 
@@ -312,11 +313,13 @@ export function MenuBuilder({
             <article key={recipe.id} className="card overflow-hidden">
               <div className="grid md:grid-cols-[180px_1fr_auto]">
                 <div className="relative min-h-44 overflow-hidden bg-ink">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
+                  <Image
                     src={recipe.image_url || "/photos/party-04.webp"}
                     alt=""
-                    className="absolute inset-0 h-full w-full object-cover"
+                    fill
+                    sizes="(min-width: 768px) 180px, 100vw"
+                    unoptimized={Boolean(recipe.image_url?.startsWith("http"))}
+                    className="object-cover"
                   />
                   <div className="absolute left-3 top-3 rounded-full bg-paper px-3 py-1 text-[10px] font-bold uppercase tracking-wider">
                     {recipe.course || "Course"}

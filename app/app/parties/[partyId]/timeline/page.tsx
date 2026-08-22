@@ -1,7 +1,6 @@
 import { TimelineBoard, type TimelineHelper, type TimelineTask } from "@/components/party/timeline-board";
 import { TimelineSyncBanner } from "@/components/party/timeline-sync-banner";
 import { formatPartyWhen } from "@/lib/calendar";
-import { syncPartyTimeline } from "@/lib/actions/timeline";
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 
@@ -11,68 +10,12 @@ export default async function TimelinePage({ params }: { params: Promise<{ party
   const { partyId } = await params;
   const supabase = await createClient();
 
-  let { data: party } = await supabase
+  const { data: party } = await supabase
     .from("parties")
     .select(PARTY_FIELDS)
     .eq("id", partyId)
     .maybeSingle();
   if (!party) notFound();
-
-  // Fallback only — normal path syncs via after() on menu/recipe mutations.
-  if (party.timeline_dirty) {
-    try {
-      await syncPartyTimeline(partyId, { mode: "structural" });
-    } catch {
-      // Banner still reflects dirty state if sync fails.
-    }
-    const refreshed = await supabase
-      .from("parties")
-      .select(PARTY_FIELDS)
-      .eq("id", partyId)
-      .maybeSingle();
-    if (refreshed.data) party = refreshed.data;
-  }
-
-  // Collapse leftovers and drop bars for recipes no longer on the menu.
-  {
-    const [{ data: recipeTasks }, { data: menu }] = await Promise.all([
-      supabase
-        .from("tasks")
-        .select("id, recipe_id, task, step_id, title")
-        .eq("party_id", partyId)
-        .not("recipe_id", "is", null),
-      supabase.from("menu_items").select("recipe_id").eq("party_id", partyId),
-    ]);
-    const menuRecipeIds = new Set((menu ?? []).map((item) => item.recipe_id));
-    let expectedTasks = 0;
-    if (menuRecipeIds.size) {
-      const { data: steps } = await supabase
-        .from("recipe_steps")
-        .select("recipe_id, task")
-        .in("recipe_id", [...menuRecipeIds]);
-      expectedTasks = new Set(
-        (steps ?? []).map((row) => `${row.recipe_id}::${row.task?.trim() || "Cooking"}`),
-      ).size;
-    }
-    const hasOffMenu = (recipeTasks ?? []).some(
-      (task) => !task.recipe_id || !menuRecipeIds.has(task.recipe_id),
-    );
-    const hasStepLeftovers = (recipeTasks ?? []).some((task) => Boolean(task.step_id));
-    const tooManyBars = (recipeTasks ?? []).length > expectedTasks;
-    if (hasOffMenu || hasStepLeftovers || tooManyBars) {
-      try {
-        await syncPartyTimeline(partyId, { mode: "structural" });
-      } catch {
-        // Fall through; banner / empty state still usable.
-      }
-      const refreshed = await supabase
-        .from("parties")
-        .select(PARTY_FIELDS)
-        .eq("id", partyId)
-        .maybeSingle();
-      if (refreshed.data) party = refreshed.data;
-    }
-  }
 
   const showSyncBanner = Boolean(party.timeline_dirty);
 
@@ -175,7 +118,7 @@ export default async function TimelinePage({ params }: { params: Promise<{ party
   }));
 
   const doneCount = list.filter((task) => task.status === "done").length;
-  const unassignedCount = list.filter((task) => !task.helper_id).length;
+  const unscheduledCount = list.filter((task) => !task.start_at).length;
   const next = list
     .filter((task) => task.status !== "done" && task.start_at)
     .sort((a, b) => Date.parse(a.start_at!) - Date.parse(b.start_at!))[0];
@@ -190,13 +133,10 @@ export default async function TimelinePage({ params }: { params: Promise<{ party
       <section className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <h2 className="font-editorial text-4xl font-semibold md:text-5xl">Order of Operations</h2>
-          <p className="mt-2 text-sm text-ink/50">
-            Helpers run down the side. Recipe tasks move across a fixed 12-hour service window.
-          </p>
         </div>
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-y border-ink/10 py-2 text-xs text-ink/55 md:border-y-0 md:py-0">
           <span><strong className="text-ink">{doneCount}/{list.length}</strong> done</span>
-          <span><strong className="text-ink">{unassignedCount}</strong> unassigned</span>
+          <span><strong className="text-ink">{unscheduledCount}</strong> to place</span>
           <span><strong className="text-ink">{time}</strong> · {date}</span>
           <span className="max-w-[220px] truncate">
             Next: <strong className="text-ink">{next?.title ?? "All clear"}</strong>

@@ -3,6 +3,7 @@
 import { deleteParty } from "@/lib/actions/parties";
 import { ArrowRight, Trash2 } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 import { useTransition } from "react";
 
 type PartyListItemProps = {
@@ -36,11 +37,14 @@ export function PartyListItem({
   return (
     <div className="group grid gap-5 border-b border-ink/15 py-6 md:grid-cols-[170px_1fr_auto] md:items-center">
       <Link href={`/app/parties/${party.id}`} className="contents">
-        <div className={`h-28 overflow-hidden md:h-24 ${tense === "past" ? "opacity-70 grayscale" : ""}`}>
-          <img
+        <div className={`relative h-28 overflow-hidden md:h-24 ${tense === "past" ? "opacity-70 grayscale" : ""}`}>
+          <Image
             src={party.hero_image || "/photos/party-01.webp"}
             alt=""
-            className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
+            fill
+            sizes="(min-width: 768px) 170px, 100vw"
+            unoptimized={Boolean(party.hero_image?.startsWith("http"))}
+            className="object-cover transition duration-500 group-hover:scale-[1.03]"
           />
         </div>
 

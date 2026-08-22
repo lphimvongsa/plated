@@ -1,5 +1,4 @@
 import { MenuBuilder } from "@/components/party/menu-builder";
-import { getPartyCostSummary } from "@/lib/party/cost-summary";
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 
@@ -12,16 +11,12 @@ export default async function MenuPage({ params }: { params: Promise<{ partyId: 
   } = await supabase.auth.getUser();
   if (!user) notFound();
 
-  const { data: party } = await supabase
-    .from("parties")
-    .select("id, service_style, planning_guest_count")
-    .eq("id", partyId)
-    .maybeSingle();
-  if (!party) notFound();
-
-  const summary = await getPartyCostSummary(supabase, partyId);
-
-  const [{ data: cookbookRows }, { data: partyRecipeRows }, { data: menuItems }] = await Promise.all([
+  const [{ data: party }, { data: cookbookRows }, { data: partyRecipeRows }, { data: menuItems }, { data: grocery }] = await Promise.all([
+    supabase
+      .from("parties")
+      .select("id, service_style, planning_guest_count, shopping_dirty")
+      .eq("id", partyId)
+      .maybeSingle(),
     supabase
       .from("recipes")
       .select("id, title, course, image_url, servings")
@@ -38,7 +33,12 @@ export default async function MenuPage({ params }: { params: Promise<{ partyId: 
       .select("id, course, sort_order, recipe_id")
       .eq("party_id", partyId)
       .order("sort_order"),
+    supabase
+      .from("grocery_items")
+      .select("estimated_cost, already_owned")
+      .eq("party_id", partyId),
   ]);
+  if (!party) notFound();
 
   const menuRecipeIds = new Set((menuItems ?? []).map((item) => item.recipe_id));
   const recipeIds = [...menuRecipeIds];
@@ -70,7 +70,8 @@ export default async function MenuPage({ params }: { params: Promise<{ partyId: 
     .map((item) => {
       const recipe = recipeById.get(item.recipe_id);
       if (!recipe) return null;
-      const dish = summary.dishes.find((row) => row.id === recipe.id);
+      const baseCost = recipe.estimated_cost ?? 0;
+      const scaledCost = Math.round(baseCost * (party.planning_guest_count / (recipe.servings || 1)) * 100) / 100;
       return {
         id: recipe.id,
         title: recipe.title,
@@ -80,23 +81,28 @@ export default async function MenuPage({ params }: { params: Promise<{ partyId: 
         cook_minutes: recipe.cook_minutes,
         allergy_notes: recipe.allergy_notes,
         estimated_cost: recipe.estimated_cost,
-        scaled_cost: dish?.scaled_cost ?? null,
+        scaled_cost: scaledCost,
         servings: recipe.servings,
       };
     })
     .filter((recipe): recipe is NonNullable<typeof recipe> => Boolean(recipe));
 
   const partyRecipesOffMenu = (partyRecipeRows ?? []).filter((recipe) => !menuRecipeIds.has(recipe.id));
+  const groceryEstimatedTotal = Math.round(
+    (grocery ?? [])
+      .filter((item) => !item.already_owned)
+      .reduce((sum, item) => sum + (item.estimated_cost ?? 0), 0) * 100,
+  ) / 100;
 
   return (
     <MenuBuilder
       partyId={partyId}
       serviceStyle={party.service_style}
-      planningGuests={summary.guestCount}
+      planningGuests={Math.max(1, party.planning_guest_count || 1)}
       initialRecipes={recipes}
       cookbookRecipes={cookbookRows ?? []}
       partyRecipesOffMenu={partyRecipesOffMenu}
-      groceryEstimatedTotal={summary.estimatedTotal}
+      groceryEstimatedTotal={groceryEstimatedTotal}
     />
   );
 }

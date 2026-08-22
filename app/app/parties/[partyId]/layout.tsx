@@ -13,13 +13,26 @@ export default async function PartyLayout({
   const { partyId } = await params;
   const supabase = await createClient();
 
-  const { data: party } = await supabase.from("parties").select("*").eq("id", partyId).maybeSingle();
+  const [{ data: party }, { data: members }, { data: invite }] = await Promise.all([
+    supabase
+      .from("parties")
+      .select("id, name, starts_at, timezone, status")
+      .eq("id", partyId)
+      .maybeSingle(),
+    supabase
+      .from("party_members")
+      .select("user_id, role")
+      .eq("party_id", partyId),
+    supabase
+      .from("invites")
+      .select("token")
+      .eq("party_id", partyId)
+      .is("revoked_at", null)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+  ]);
   if (!party) notFound();
-
-  const { data: members } = await supabase
-    .from("party_members")
-    .select("user_id, role")
-    .eq("party_id", partyId);
 
   const userIds = (members ?? []).map((member) => member.user_id);
   const { data: profiles } =
@@ -31,15 +44,6 @@ export default async function PartyLayout({
   const collaborators = (members ?? []).map((member) =>
     initialsFromName(profileById.get(member.user_id)?.name),
   );
-
-  const { data: invite } = await supabase
-    .from("invites")
-    .select("token")
-    .eq("party_id", partyId)
-    .is("revoked_at", null)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
 
   return (
     <PartyShell

@@ -3,6 +3,7 @@ import type { Database } from "@/lib/database.types";
 import { createClient } from "@/lib/supabase/server";
 import { AlertTriangle, ArrowRight, CalendarDays, Clock3, Plus, ShoppingBasket } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 import { redirect } from "next/navigation";
 
 type Party = Database["public"]["Tables"]["parties"]["Row"];
@@ -279,11 +280,14 @@ export default async function DashboardPage() {
                     href={`/app/parties/${party.id}`}
                     className="group flex flex-col border border-ink/15 bg-[#f8f4ec] p-3"
                   >
-                    <div className="h-44 overflow-hidden md:h-52">
-                      <img
+                    <div className="relative h-44 overflow-hidden md:h-52">
+                      <Image
                         src={party.hero_image || "/photos/party-01.webp"}
                         alt=""
-                        className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
+                        fill
+                        sizes="(min-width: 1280px) 30vw, (min-width: 768px) 45vw, 100vw"
+                        unoptimized={Boolean(party.hero_image?.startsWith("http"))}
+                        className="object-cover transition duration-500 group-hover:scale-[1.03]"
                       />
                     </div>
                     <div className="flex flex-1 flex-col px-1 pb-1 pt-4">

@@ -18,10 +18,7 @@ import type {
   RecipeStepFields,
 } from "@/lib/recipes/types";
 import { canonicalKey } from "@/lib/recipes/units";
-import {
-  convertToPreferredWeight,
-  type WeightSystem,
-} from "@/lib/recipes/weight-convert";
+import type { WeightSystem } from "@/lib/recipes/weight-convert";
 import { schedulePartyDerivedRefresh } from "@/lib/party/refresh-derived";
 import { createClient } from "@/lib/supabase/server";
 
@@ -102,27 +99,15 @@ async function loadUserPantryNames(
 
 async function normalizeIngredientsForStorage(
   items: IngredientFields[],
-  system: WeightSystem,
+  _system: WeightSystem,
   /** When provided, pantry checkboxes are set from the user's pantry list. */
   pantryNames?: string[] | null,
 ): Promise<IngredientFields[]> {
   const normalized = normalizeIngredientFields(items);
   const base = pantryNames ? applyPantryFlags(normalized, pantryNames) : normalized;
-  const out: IngredientFields[] = [];
-  for (const item of base) {
-    const converted = await convertToPreferredWeight({
-      name: item.name,
-      quantity: item.quantity ?? null,
-      unit: item.unit ?? null,
-      system,
-    });
-    out.push({
-      ...item,
-      quantity: converted.quantity,
-      unit: converted.unit,
-    });
-  }
-  return out;
+  // Preserve recipe-authored units. Catalog conversions are derived only while
+  // consolidating/costing and must never rewrite recipe source quantities.
+  return base;
 }
 
 function mapIngredients(recipeId: string, items: IngredientFields[]): IngredientInsert[] {

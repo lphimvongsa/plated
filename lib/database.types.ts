@@ -68,7 +68,11 @@ export type Database = {
           hero_image: string | null;
           planning_guest_count: number;
           shopping_dirty: boolean;
+          shopping_refresh_token: string | null;
+          shopping_refresh_started_at: string | null;
           timeline_dirty: boolean;
+          timeline_refresh_token: string | null;
+          timeline_refresh_started_at: string | null;
           status: string;
           created_at: string;
           updated_at: string;
@@ -91,7 +95,11 @@ export type Database = {
           hero_image?: string | null;
           planning_guest_count?: number;
           shopping_dirty?: boolean;
+          shopping_refresh_token?: string | null;
+          shopping_refresh_started_at?: string | null;
           timeline_dirty?: boolean;
+          timeline_refresh_token?: string | null;
+          timeline_refresh_started_at?: string | null;
           status?: string;
         };
         Update: {
@@ -110,7 +118,11 @@ export type Database = {
           hero_image?: string | null;
           planning_guest_count?: number;
           shopping_dirty?: boolean;
+          shopping_refresh_token?: string | null;
+          shopping_refresh_started_at?: string | null;
           timeline_dirty?: boolean;
+          timeline_refresh_token?: string | null;
+          timeline_refresh_started_at?: string | null;
           status?: string;
         };
         Relationships: [];
@@ -348,7 +360,9 @@ export type Database = {
           unit: string;
           price_per_unit: number;
           currency: string;
+          market: string;
           source: string;
+          observed_at: string | null;
           updated_at: string;
         };
         Insert: {
@@ -356,14 +370,47 @@ export type Database = {
           unit: string;
           price_per_unit: number;
           currency?: string;
+          market?: string;
           source?: string;
+          observed_at?: string | null;
         };
         Update: {
+          canonical_key?: string;
           unit?: string;
           price_per_unit?: number;
           currency?: string;
+          market?: string;
           source?: string;
+          observed_at?: string | null;
+          updated_at?: string;
         };
+        Relationships: [];
+      };
+      grocery_ingredients: {
+        Row: {
+          canonical_key: string; display_name: string; category: string; subcategory: string | null;
+          preferred_shopping_unit: string; keep_count: boolean; density_g_per_ml: number | null;
+          edible_yield: number; cuisine_tags: string[]; notes: string | null; active: boolean;
+          created_at: string; updated_at: string;
+        };
+        Insert: {
+          canonical_key: string; display_name: string; category: string; subcategory?: string | null;
+          preferred_shopping_unit: string; keep_count?: boolean; density_g_per_ml?: number | null;
+          edible_yield?: number; cuisine_tags?: string[]; notes?: string | null; active?: boolean;
+        };
+        Update: Partial<Database["public"]["Tables"]["grocery_ingredients"]["Insert"]>;
+        Relationships: [];
+      };
+      ingredient_aliases: {
+        Row: { alias_key: string; canonical_key: string };
+        Insert: { alias_key: string; canonical_key: string };
+        Update: { alias_key?: string; canonical_key?: string };
+        Relationships: [];
+      };
+      ingredient_unit_weights: {
+        Row: { canonical_key: string; unit: string; grams_per_unit: number; source: string; updated_at: string };
+        Insert: { canonical_key: string; unit: string; grams_per_unit: number; source?: string; updated_at?: string };
+        Update: { canonical_key?: string; unit?: string; grams_per_unit?: number; source?: string; updated_at?: string };
         Relationships: [];
       };
       menu_items: {
@@ -591,6 +638,14 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      claim_party_refresh: {
+        Args: { p_party_id: string; p_kind: string };
+        Returns: string | null;
+      };
+      finish_party_refresh: {
+        Args: { p_party_id: string; p_kind: string; p_token: string; p_success: boolean };
+        Returns: boolean;
+      };
       get_invite_by_token: {
         Args: { p_token: string };
         Returns: Json;

@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { claimPartyRefresh, finishPartyRefresh } from "@/lib/party/refresh-claim";
+import type { Database } from "@/lib/database.types";
 
 type RecipeTaskBlock = {
   recipeId: string;
@@ -46,7 +48,7 @@ function groupStepsIntoTasks(
   return order.map((key) => map.get(key)!);
 }
 
-export async function syncPartyTimeline(
+async function syncPartyTimelineUnlocked(
   partyId: string,
   options: { mode: "auto" | "structural" },
 ) {
@@ -71,6 +73,7 @@ export async function syncPartyTimeline(
   // Canonical recipe task: recipe-scoped, no step_id, task name set.
   // Anything else with a recipe_id is a leftover per-step row.
   const tasksByName = new Map<string, (typeof recipeTasks)[number]>();
+  const deleteIds: string[] = [];
   for (const row of recipeTasks) {
     if (!row.task || row.step_id) continue;
     const key = recipeTaskKey(row.recipe_id as string, row.task);
@@ -89,6 +92,8 @@ export async function syncPartyTimeline(
 
   const keepIds = new Set<string>();
   const menuRecipeIds = new Set(recipeIds);
+  const taskWrites: Array<Promise<{ error: { message: string } | null }>> = [];
+  const taskInserts: Database["public"]["Tables"]["tasks"]["Insert"][] = [];
 
   if (recipeIds.length) {
     const { data: steps } = await supabase
@@ -107,20 +112,22 @@ export async function syncPartyTimeline(
         keepIds.add(existing.id);
         if (mode === "auto") {
           if (existing.title !== block.task) {
-            await supabase.from("tasks").update({ title: block.task }).eq("id", existing.id);
+            taskWrites.push(
+              Promise.resolve(supabase.from("tasks").update({ title: block.task }).eq("id", existing.id))
+                .then((result) => ({ error: result.error })),
+            );
           }
         } else {
-          await supabase
-            .from("tasks")
-            .update({
+          taskWrites.push(
+            Promise.resolve(supabase.from("tasks").update({
               title: block.task,
               task: block.task,
               duration_minutes: block.durationMinutes || null,
               recipe_id: block.recipeId,
               step_id: null,
               sort_order: block.sortOrder,
-            })
-            .eq("id", existing.id);
+            }).eq("id", existing.id)).then((result) => ({ error: result.error })),
+          );
         }
       } else if (mode === "structural") {
         // Promote any leftover row for this recipe so schedule/assignee can stick.
@@ -132,23 +139,20 @@ export async function syncPartyTimeline(
         ) ?? recipeTasks.find((row) => row.recipe_id === block.recipeId && !keepIds.has(row.id));
 
         if (leftover) {
-          await supabase
-            .from("tasks")
-            .update({
+          taskWrites.push(
+            Promise.resolve(supabase.from("tasks").update({
               title: block.task,
               task: block.task,
               duration_minutes: block.durationMinutes || null,
               recipe_id: block.recipeId,
               step_id: null,
               sort_order: block.sortOrder,
-            })
-            .eq("id", leftover.id);
+            }).eq("id", leftover.id)).then((result) => ({ error: result.error })),
+          );
           keepIds.add(leftover.id);
           tasksByName.set(key, { ...leftover, task: block.task, step_id: null });
         } else {
-          const { data: inserted, error } = await supabase
-            .from("tasks")
-            .insert({
+          taskInserts.push({
               party_id: partyId,
               recipe_id: block.recipeId,
               step_id: null,
@@ -157,14 +161,19 @@ export async function syncPartyTimeline(
               duration_minutes: block.durationMinutes || null,
               sort_order: block.sortOrder,
               status: "todo",
-            })
-            .select("id")
-            .single();
-          if (error) return { error: error.message };
-          if (inserted) keepIds.add(inserted.id);
+          });
         }
       }
     }
+  }
+
+  const writeResults = await Promise.all(taskWrites);
+  const writeError = writeResults.find((result) => result.error)?.error;
+  if (writeError) return { error: writeError.message };
+
+  if (taskInserts.length) {
+    const { error } = await supabase.from("tasks").insert(taskInserts);
+    if (error) return { error: error.message };
   }
 
   // Always drop bars for dishes no longer on the menu (auto + structural).
@@ -174,24 +183,45 @@ export async function syncPartyTimeline(
 
     if (mode === "auto") {
       if (!onMenu) {
-        const { error } = await supabase.from("tasks").delete().eq("id", row.id);
-        if (error) return { error: error.message };
+        deleteIds.push(row.id);
       }
       continue;
     }
 
     if (!keepIds.has(row.id)) {
-      const { error } = await supabase.from("tasks").delete().eq("id", row.id);
-      if (error) return { error: error.message };
+      deleteIds.push(row.id);
     }
   }
 
-  if (mode === "structural") {
-    await supabase.from("parties").update({ timeline_dirty: false }).eq("id", partyId);
+  if (deleteIds.length) {
+    const { error } = await supabase.from("tasks").delete().in("id", deleteIds);
+    if (error) return { error: error.message };
   }
 
   revalidatePath(`/app/parties/${partyId}/timeline`);
   return { error: null };
+}
+
+export async function syncPartyTimeline(
+  partyId: string,
+  options: { mode: "auto" | "structural" },
+) {
+  if (options.mode === "auto") return syncPartyTimelineUnlocked(partyId, options);
+
+  const supabase = await createClient();
+  const claim = await claimPartyRefresh(supabase, partyId, "timeline");
+  if (!claim.token) return { error: claim.error };
+
+  let success = false;
+  try {
+    const result = await syncPartyTimelineUnlocked(partyId, options);
+    success = !result.error;
+    return result;
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Could not synchronize timeline." };
+  } finally {
+    await finishPartyRefresh(supabase, partyId, "timeline", claim.token, success);
+  }
 }
 
 export async function createDishScopedTask(
@@ -448,15 +478,25 @@ export async function autoScheduleTimeline(partyId: string) {
     .maybeSingle();
   if (!party) return { error: "Party not found." };
 
-  const { data: tasks } = await supabase
-    .from("tasks")
-    .select("id, start_at, duration_minutes, locked, sort_order")
-    .eq("party_id", partyId)
-    .is("start_at", null)
-    .order("sort_order");
+  const [{ data: tasks }, { data: helpers }] = await Promise.all([
+    supabase
+      .from("tasks")
+      .select("id, start_at, duration_minutes, locked, sort_order, helper_id")
+      .eq("party_id", partyId)
+      .is("start_at", null)
+      .order("sort_order"),
+    supabase
+      .from("party_helpers")
+      .select("id")
+      .eq("party_id", partyId)
+      .order("sort_order"),
+  ]);
 
   const pending = (tasks ?? []).filter((task) => !task.locked);
   if (!pending.length) return { error: null, scheduled: 0 };
+
+  const helperIds = (helpers ?? []).map((helper) => helper.id);
+  if (!helperIds.length) return { error: "Add a helper before auto-placing tasks." };
 
   const partyStart = new Date(party.starts_at).getTime();
   const prepStart = new Date(party.prep_starts_at ?? party.starts_at).getTime();
@@ -472,10 +512,20 @@ export async function autoScheduleTimeline(partyId: string) {
 
   const shift = cursor < prepStart ? prepStart - cursor : 0;
 
-  for (const task of pending) {
-    const startAt = new Date((starts.get(task.id) ?? prepStart) + shift).toISOString();
-    await supabase.from("tasks").update({ start_at: startAt }).eq("id", task.id);
-  }
+  const updates = await Promise.all(
+    pending.map((task, index) => {
+      const startAt = new Date((starts.get(task.id) ?? prepStart) + shift).toISOString();
+      const helperId = task.helper_id && helperIds.includes(task.helper_id)
+        ? task.helper_id
+        : helperIds[index % helperIds.length];
+      return supabase
+        .from("tasks")
+        .update({ start_at: startAt, helper_id: helperId })
+        .eq("id", task.id);
+    }),
+  );
+  const updateError = updates.find((result) => result.error)?.error;
+  if (updateError) return { error: updateError.message };
 
   revalidatePath(`/app/parties/${partyId}/timeline`);
   return { error: null, scheduled: pending.length };

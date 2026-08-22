@@ -53,7 +53,7 @@ Rules:
 - Every ingredient needs: standardized Title Case grocery name, numeric quantity (max 2 decimals), unit, grocery category, and preparation_note when the source mentions prep (diced, minced, room temp, etc.).
 - Grocery category is a shopping aisle only: Produce, Dairy, Meat, Dry Goods, Spices, or Other. Never use "Pantry" as a category — pantry ownership is handled separately by the app.
 - Do NOT set pantry ownership; omit pantry_flag (the app matches the user's pantry after import).
-- Prefer true volume/weight units (cup, tbsp, tsp, oz, lb, g, kg, ml, l). Avoid count units like strip/stalk/each when a weight estimate is reasonable.
+- Preserve the source quantity and unit exactly when they are usable, including count units such as each, clove, strip, stalk, sprig, bunch, and can. Never invent a weight to replace a source count; the grocery catalog performs conversions later.
 - Ingredient names MUST be grocery base names: no parenthetical asides, no prep words in the name ("Extra Virgin Olive Oil" → "Olive Oil", "thick-cut bacon" → "Bacon", "2 cloves garlic, minced" → name "Garlic", preparation_note "minced").
 - Vague amounts ("to taste", "a handful", "for serving") still get a best-estimate quantity + unit.
 - Split "½ teaspoon EACH: oregano, parsley" into separate ingredients.
