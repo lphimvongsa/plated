@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { withStorageUploadRetry } from "@/lib/media/storage-upload";
 import { createClient } from "@/lib/supabase/server";
 
 type GroceryChoice = {
@@ -94,8 +95,9 @@ export async function analyzeReceipt(partyId: string, formData: FormData): Promi
   const auth = await requirePartyMember(partyId);
   if (!auth.ok) return auth;
   const file = formData.get("receipt");
-  if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Choose or take a receipt photo first." };
-  if (!file.type.startsWith("image/")) return { ok: false, error: "Receipt scanning currently supports image files." };
+  if (!(file instanceof Blob) || file.size === 0) return { ok: false, error: "Choose or take a receipt photo first." };
+  const fileType = file.type || "image/jpeg";
+  if (!fileType.startsWith("image/")) return { ok: false, error: "Receipt scanning currently supports image files." };
   if (file.size > 12 * 1024 * 1024) return { ok: false, error: "Receipt photo must be under 12 MB." };
 
   const { supabase, user } = auth;
@@ -110,8 +112,8 @@ export async function analyzeReceipt(partyId: string, formData: FormData): Promi
   const config = aiConfig();
   if (!config) return { ok: false, error: "Set AI_API_KEY to enable receipt scanning." };
 
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const dataUrl = `data:${file.type || "image/jpeg"};base64,${buffer.toString("base64")}`;
+  const buffer = Buffer.from(new Uint8Array(await file.arrayBuffer()));
+  const dataUrl = `data:${fileType};base64,${buffer.toString("base64")}`;
   const groceryPrompt = grocery.map((item) => ({ id: item.id, name: item.ingredient_name, canonical: item.canonical_key })).slice(0, 250);
 
   const response = await fetch(`${config.baseUrl}/chat/completions`, {
@@ -181,9 +183,13 @@ export async function analyzeReceipt(partyId: string, formData: FormData): Promi
     };
   }).filter((item: ReceiptMatchDraft) => item.rawName && item.lineTotal >= 0) : [];
 
-  const extension = (file.name.split(".").pop() || "jpg").replace(/[^a-z0-9]/gi, "").toLowerCase() || "jpg";
-  const imagePath = `${partyId}/receipts/${crypto.randomUUID()}.${extension}`;
-  const { error: uploadError } = await supabase.storage.from("party-media").upload(imagePath, buffer, { contentType: file.type || "image/jpeg", upsert: false });
+  const fileName = file instanceof File ? file.name : "receipt.jpg";
+  const extension = (fileName.split(".").pop() || "jpg").replace(/[^a-z0-9]/gi, "").toLowerCase() || "jpg";
+  let imagePath = `${partyId}/receipts/${crypto.randomUUID()}.${extension}`;
+  const { error: uploadError } = await withStorageUploadRetry(async () => {
+    imagePath = `${partyId}/receipts/${crypto.randomUUID()}.${extension}`;
+    return supabase.storage.from("party-media").upload(imagePath, buffer, { contentType: fileType, upsert: false });
+  });
 
   return {
     ok: true,

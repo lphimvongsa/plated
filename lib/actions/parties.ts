@@ -6,6 +6,7 @@ import type { Database, Json } from "@/lib/database.types";
 import { durationMinutesBetween, parsePartyDurationMinutes, partyEndsAt } from "@/lib/party/duration";
 import { schedulePartyDerivedRefresh } from "@/lib/party/refresh-derived";
 import { normalizePhone } from "@/lib/outbound/phone";
+import { friendlyStorageUploadError, withStorageUploadRetry } from "@/lib/media/storage-upload";
 import { createClient } from "@/lib/supabase/server";
 
 type PartyUpdate = Database["public"]["Tables"]["parties"]["Update"];
@@ -80,7 +81,7 @@ export async function createParty(formData: FormData) {
   }
 
   const coverFile = formData.get("cover_photo");
-  if (coverFile instanceof File && coverFile.size > 0) {
+  if (coverFile instanceof Blob && coverFile.size > 0) {
     const uploaded = await uploadPartyImage(supabase, party.id, coverFile);
     if (!uploaded.error && uploaded.url) {
       await supabase.from("parties").update({
@@ -146,7 +147,7 @@ export async function updatePartySettings(partyId: string, formData: FormData) {
   }
 
   const coverFile = formData.get("cover_photo");
-  if (coverFile instanceof File && coverFile.size > 0) {
+  if (coverFile instanceof Blob && coverFile.size > 0) {
     const uploaded = await uploadPartyImage(supabase, partyId, coverFile);
     if (uploaded.error) return { error: uploaded.error };
     if (uploaded.url) patch.hero_image = uploaded.url;
@@ -289,19 +290,34 @@ const PARTY_MEDIA_BUCKET = "party-media";
 async function uploadPartyImage(
   supabase: Awaited<ReturnType<typeof createClient>>,
   partyId: string,
-  file: File,
+  file: Blob,
 ) {
-  if (!file.size || !file.type.startsWith("image/")) return { url: null, error: "Choose an image file." };
-  if (file.size > 12 * 1024 * 1024) return { url: null, error: "Cover photos must be under 12 MB." };
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-").slice(-80) || "cover.jpg";
-  const path = `${partyId}/${crypto.randomUUID()}-${safeName}`;
-  const bytes = Buffer.from(await file.arrayBuffer());
-  const { error } = await supabase.storage.from(PARTY_MEDIA_BUCKET).upload(path, bytes, {
-    contentType: file.type,
-    upsert: false,
-  });
-  if (error) return { url: null, error: error.message };
-  return { url: supabase.storage.from(PARTY_MEDIA_BUCKET).getPublicUrl(path).data.publicUrl, error: null };
+  try {
+    const type = file.type || "image/jpeg";
+    const name = file instanceof File ? file.name : "cover.jpg";
+    if (!file.size || !type.startsWith("image/")) return { url: null, error: "Choose an image file." };
+    if (file.size > 12 * 1024 * 1024) return { url: null, error: "Cover photos must be under 12 MB." };
+    const safeName = name.replace(/[^a-zA-Z0-9._-]/g, "-").slice(-80) || "cover.jpg";
+    const bytes = Buffer.from(new Uint8Array(await file.arrayBuffer()));
+    let uploadedPath = "";
+    const result = await withStorageUploadRetry(async () => {
+      uploadedPath = `${partyId}/${crypto.randomUUID()}-${safeName}`;
+      return supabase.storage.from(PARTY_MEDIA_BUCKET).upload(uploadedPath, bytes, {
+        contentType: type,
+        upsert: false,
+      });
+    });
+    if (result.error) return { url: null, error: friendlyStorageUploadError(result.error.message) };
+    return {
+      url: supabase.storage.from(PARTY_MEDIA_BUCKET).getPublicUrl(uploadedPath).data.publicUrl,
+      error: null,
+    };
+  } catch (error) {
+    return {
+      url: null,
+      error: friendlyStorageUploadError(error instanceof Error ? error.message : undefined),
+    };
+  }
 }
 
 export async function updateInvitationDraft(partyId: string, formData: FormData) {
@@ -363,7 +379,7 @@ export async function updateInvitationDraft(partyId: string, formData: FormData)
 export async function uploadPartyCover(partyId: string, formData: FormData) {
   const supabase = await createClient();
   const file = formData.get("cover_photo");
-  if (!(file instanceof File)) return { error: "Choose a photo." };
+  if (!(file instanceof Blob) || file.size === 0) return { error: "Choose a photo." };
   const upload = await uploadPartyImage(supabase, partyId, file);
   if (upload.error || !upload.url) return { error: upload.error ?? "Could not upload photo." };
   const { error } = await supabase.from("parties").update({ hero_image: upload.url }).eq("id", partyId);
@@ -378,7 +394,7 @@ export async function uploadPartyCover(partyId: string, formData: FormData) {
 export async function uploadInvitationPhoto(partyId: string, formData: FormData) {
   const supabase = await createClient();
   const file = formData.get("photo");
-  if (!(file instanceof File)) return { error: "Choose a photo." };
+  if (!(file instanceof Blob) || file.size === 0) return { error: "Choose a photo." };
   const upload = await uploadPartyImage(supabase, partyId, file);
   if (upload.error || !upload.url) return { error: upload.error ?? "Could not upload photo." };
   return { error: null, url: upload.url };
