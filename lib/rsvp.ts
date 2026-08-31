@@ -9,6 +9,27 @@ export function formatRsvpStatus(status: string) {
   return RSVP_LABELS[status] ?? status;
 }
 
+export function parseAllergyList(raw: string | null | undefined) {
+  if (!raw?.trim()) return [];
+  return raw
+    .split(/[\n,;]+/)
+    .map((item) => item.trim())
+    .filter((item) => item && !/^(none|n\/a|—|-)$/i.test(item));
+}
+
+export function serializeAllergyList(items: string[]) {
+  const cleaned = items.map((item) => item.trim()).filter(Boolean);
+  return cleaned.length ? cleaned.join("\n") : null;
+}
+
+export function formatAllergyList(raw: string | null | undefined) {
+  return parseAllergyList(raw).join(", ");
+}
+
+export function hasAllergyList(raw: string | null | undefined) {
+  return parseAllergyList(raw).length > 0;
+}
+
 export function initialsFromName(name: string | null | undefined) {
   if (!name?.trim()) return "?";
   return name

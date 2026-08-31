@@ -4,11 +4,18 @@ export type CalendarEvent = {
   endsAt: string;
   location?: string | null;
   description?: string | null;
+  url?: string | null;
+  uid?: string | null;
+  organizerName?: string | null;
+  organizerEmail?: string | null;
 };
+
+function pad(n: number) {
+  return String(n).padStart(2, "0");
+}
 
 function toGoogleDate(iso: string) {
   const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
   return (
     d.getUTCFullYear().toString() +
     pad(d.getUTCMonth() + 1) +
@@ -21,6 +28,20 @@ function toGoogleDate(iso: string) {
   );
 }
 
+function foldIcsLine(line: string) {
+  if (line.length <= 75) return line;
+  const chunks: string[] = [];
+  let remaining = line;
+  let first = true;
+  while (remaining.length > 0) {
+    const size = first ? 75 : 74;
+    chunks.push(`${first ? "" : " "}${remaining.slice(0, size)}`);
+    remaining = remaining.slice(size);
+    first = false;
+  }
+  return chunks.join("\r\n");
+}
+
 export function googleCalendarUrl(event: CalendarEvent) {
   const params = new URLSearchParams({
     action: "TEMPLATE",
@@ -28,7 +49,10 @@ export function googleCalendarUrl(event: CalendarEvent) {
     dates: `${toGoogleDate(event.startsAt)}/${toGoogleDate(event.endsAt)}`,
   });
   if (event.location) params.set("location", event.location);
-  if (event.description) params.set("details", event.description);
+  const details = [event.description, event.url ? `RSVP: ${event.url}` : ""]
+    .filter(Boolean)
+    .join("\n\n");
+  if (details) params.set("details", details);
   return `https://calendar.google.com/calendar/render?${params.toString()}`;
 }
 
@@ -43,14 +67,21 @@ export function icsContent(event: CalendarEvent) {
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
     "BEGIN:VEVENT",
+    `UID:${escape(event.uid || `${event.title}-${event.startsAt}@plated`)}`,
+    `DTSTAMP:${toGoogleDate(new Date().toISOString())}`,
     `DTSTART:${toGoogleDate(event.startsAt)}`,
     `DTEND:${toGoogleDate(event.endsAt)}`,
     `SUMMARY:${escape(event.title)}`,
   ];
   if (event.location) lines.push(`LOCATION:${escape(event.location)}`);
+  if (event.organizerEmail) {
+    const cn = escape(event.organizerName || event.organizerEmail);
+    lines.push(`ORGANIZER;CN=${cn}:mailto:${escape(event.organizerEmail)}`);
+  }
   if (event.description) lines.push(`DESCRIPTION:${escape(event.description)}`);
+  if (event.url) lines.push(`URL:${escape(event.url)}`);
   lines.push("END:VEVENT", "END:VCALENDAR");
-  return lines.join("\r\n");
+  return lines.map(foldIcsLine).join("\r\n");
 }
 
 export function icsDataUri(event: CalendarEvent) {

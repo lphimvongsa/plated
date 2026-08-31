@@ -10,16 +10,14 @@ export default async function TimelinePage({ params }: { params: Promise<{ party
   const { partyId } = await params;
   const supabase = await createClient();
 
-  const { data: party } = await supabase
-    .from("parties")
-    .select(PARTY_FIELDS)
-    .eq("id", partyId)
-    .maybeSingle();
-  if (!party) notFound();
-
-  const showSyncBanner = Boolean(party.timeline_dirty);
-
-  const [{ data: tasks }, { data: helperRows }, { data: menuItems }] = await Promise.all([
+  // Party metadata, bars, and helper lanes are independent. Fetching them in
+  // parallel keeps one Supabase round-trip off the page's critical path.
+  const [{ data: party }, { data: tasks }, { data: helperRows }] = await Promise.all([
+    supabase
+      .from("parties")
+      .select(PARTY_FIELDS)
+      .eq("id", partyId)
+      .maybeSingle(),
     supabase
       .from("tasks")
       .select(
@@ -37,7 +35,7 @@ export default async function TimelinePage({ params }: { params: Promise<{ party
       locked,
       recipe_id,
       sort_order,
-      recipes ( title )
+      recipes ( title, color_hex )
     `,
       )
       .eq("party_id", partyId)
@@ -47,8 +45,10 @@ export default async function TimelinePage({ params }: { params: Promise<{ party
       .select("id, name, color, sort_order")
       .eq("party_id", partyId)
       .order("sort_order"),
-    supabase.from("menu_items").select("recipe_id").eq("party_id", partyId),
   ]);
+  if (!party) notFound();
+
+  const showSyncBanner = Boolean(party.timeline_dirty);
 
   type RecipeStepRow = {
     id: string;
@@ -60,7 +60,7 @@ export default async function TimelinePage({ params }: { params: Promise<{ party
     sort_order: number;
   };
 
-  const recipeIds = [...new Set((menuItems ?? []).map((item) => item.recipe_id))];
+  const recipeIds = [...new Set((tasks ?? []).map((task) => task.recipe_id).filter((id): id is string => Boolean(id)))];
   const { data: stepRows } = recipeIds.length
     ? await supabase
         .from("recipe_steps")
@@ -77,6 +77,8 @@ export default async function TimelinePage({ params }: { params: Promise<{ party
     list.push(step);
     stepsByTask.set(key, list);
   }
+
+  const fallbackHelperId = (helperRows ?? [])[0]?.id ?? null;
 
   const list: TimelineTask[] = (tasks ?? []).map((row) => {
     const recipe = Array.isArray(row.recipes) ? row.recipes[0] : row.recipes;
@@ -100,10 +102,11 @@ export default async function TimelinePage({ params }: { params: Promise<{ party
       status: row.status,
       difficulty: row.difficulty,
       assigned_name: row.assigned_name,
-      helper_id: row.helper_id,
+      helper_id: row.helper_id ?? (row.start_at ? fallbackHelperId : null),
       locked: row.locked,
       recipe_id: row.recipe_id,
       recipe_title: recipe?.title ?? null,
+      recipe_color: recipe?.color_hex ?? null,
       task: taskName,
       sort_order: row.sort_order,
       steps,

@@ -1,22 +1,21 @@
 import { RecipeEditor } from "@/components/recipe/recipe-editor";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthenticatedUserId } from "@/lib/supabase/auth";
 import { notFound, redirect } from "next/navigation";
 
 export default async function CookbookRecipePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const userId = await getAuthenticatedUserId();
 
-  if (!user) redirect("/auth/login");
+  if (!userId) redirect("/auth/login");
 
   const { data: recipe } = await supabase
     .from("recipes")
     .select("*")
     .eq("id", id)
     .is("party_id", null)
-    .eq("owner_id", user.id)
+    .eq("owner_id", userId)
     .maybeSingle();
 
   if (!recipe) notFound();

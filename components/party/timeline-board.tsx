@@ -13,9 +13,9 @@ import {
   useSensors,
   type CollisionDetection,
   type DragEndEvent,
+  type DragMoveEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { Modal } from "@/components/modal";
 import { TaskDoneToggle, TaskLockToggle } from "@/components/party/task-toggles";
 import {
   addHelper,
@@ -24,18 +24,21 @@ import {
   removeHelper,
   renameHelper,
   setTaskDuration,
+  setHelperColor,
+  setRecipeTimelineColor,
 } from "@/lib/actions/timeline";
 import {
   buildAxis,
+  gridLabelMinutes,
   gridTickMinutes,
   snapToMinutes,
   SNAP_MINUTES,
-  VIEW_HOUR_OPTIONS,
   VIEWPORT_HOURS,
 } from "@/lib/timeline/scale";
-import { Check, GripVertical, Lock, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, GripVertical, Lock, Minus, Plus, RotateCcw, Sparkles, Trash2, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useOptimistic, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
+import { ACCENT_COLOR_PALETTE } from "@/lib/party/themes";
 
 export type TimelineStep = {
   id: string;
@@ -57,6 +60,7 @@ export type TimelineTask = {
   locked: boolean;
   recipe_id: string | null;
   recipe_title: string | null;
+  recipe_color: string | null;
   task: string;
   sort_order: number;
   steps: TimelineStep[];
@@ -86,6 +90,7 @@ type RecipeGroup = {
 };
 
 type Move = { taskId: string; helperId?: string | null; startAt?: string | null };
+type DragPreview = { task: TimelineTask; helperId: string; startAt: string };
 
 const DEFAULT_MINUTES = 30;
 const BAR_HEIGHT = 40;
@@ -93,7 +98,10 @@ const BAR_HEIGHT = 40;
 const MIN_BAR_WIDTH = 10;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
-type ViewHours = (typeof VIEW_HOUR_OPTIONS)[number];
+const MIN_VIEW_HOURS = 1;
+const MAX_VIEW_HOURS = 12;
+
+type InspectorAnchor = { top: number; bottom: number; left: number; right: number; width: number; height: number };
 
 const collisionDetection: CollisionDetection = (args) => {
   const pointerHits = pointerWithin(args);
@@ -130,6 +138,9 @@ const RECIPE_COLORS = [
 ];
 
 function recipeStyle(task: TimelineTask) {
+  if (task.recipe_color && /^#[0-9a-f]{6}$/i.test(task.recipe_color)) {
+    return { background: task.recipe_color, border: task.recipe_color, color: "#fffaf2" };
+  }
   if (!task.recipe_id) return { background: "#e9e2d6", border: "#81786e", color: "#29231f" };
   let hash = 0;
   for (const character of task.recipe_id) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
@@ -138,6 +149,22 @@ function recipeStyle(task: TimelineTask) {
 
 function styleFor(color: string) {
   return HELPER_STYLES[color] ?? HELPER_STYLES.tomato;
+}
+
+function helperColorHex(color: string) {
+  if (/^#[0-9a-f]{6}$/i.test(color)) return color;
+  const legacy: Record<string, string> = {
+    tomato: "#C84A35", orange: "#E58262", olive: "#73806A", wine: "#7E3943", gold: "#D6A943", blush: "#B06C86",
+  };
+  return legacy[color] ?? "#C84A35";
+}
+
+function hexToRgba(color: string, alpha: number) {
+  const hex = helperColorHex(color).replace("#", "");
+  const red = Number.parseInt(hex.slice(0, 2), 16);
+  const green = Number.parseInt(hex.slice(2, 4), 16);
+  const blue = Number.parseInt(hex.slice(4, 6), 16);
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 }
 
 function minutesOf(task: TimelineTask) {
@@ -202,16 +229,19 @@ export function TimelineBoard({
   partyEndsAt: string | null;
 }) {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
-  const [flagTaskId, setFlagTaskId] = useState<string | null>(null);
+  const [dragPreview, setDragPreview] = useState<DragPreview | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [inspectorAnchor, setInspectorAnchor] = useState<InspectorAnchor | null>(null);
   const [newHelper, setNewHelper] = useState("");
+  const [newHelperColor, setNewHelperColor] = useState(ACCENT_COLOR_PALETTE[0]);
+  const [undoMove, setUndoMove] = useState<Move | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [viewportWidth, setViewportWidth] = useState(960);
-  const [viewHours, setViewHours] = useState<ViewHours>(VIEWPORT_HOURS);
+  const [viewHours, setViewHours] = useState<number>(VIEWPORT_HOURS);
   const [now, setNow] = useState(() => Date.now());
   const scrollRef = useRef<HTMLDivElement>(null);
-  const scrollAnchorRef = useRef<number | null>(null);
+  const scrollAnchorRef = useRef<{ time: number; viewportX: number } | null>(null);
   const didInitialScroll = useRef(false);
   const suppressClickRef = useRef(false);
 
@@ -326,22 +356,48 @@ export function TimelineBoard({
   );
   const tickMinutes = gridTickMinutes(viewHours);
 
-  function run(action: () => Promise<{ error: string | null } | void>, move?: Move) {
+  function run(action: () => Promise<{ error: string | null } | void>, move?: Move, undo?: Move) {
     setError(null);
     startTransition(async () => {
       if (move) applyOptimistic(move);
+      if (undo) setUndoMove(undo);
       const result = await action();
       if (result && "error" in result && result.error) setError(result.error);
     });
   }
 
+  function runTaskMove(task: TimelineTask, patch: Omit<Move, "taskId">) {
+    const move: Move = { taskId: task.id, ...patch };
+    const undo: Move = { taskId: task.id };
+    if ("helperId" in patch) undo.helperId = task.helper_id;
+    if ("startAt" in patch) undo.startAt = task.start_at;
+    const serverPatch: { helperId?: string | null; startAt?: string | null } = {};
+    if ("helperId" in patch) serverPatch.helperId = patch.helperId;
+    if ("startAt" in patch) serverPatch.startAt = patch.startAt;
+    run(() => moveTask(partyId, task.id, serverPatch), move, undo);
+  }
+
+  function undoLastMove() {
+    if (!undoMove) return;
+    const task = taskById.get(undoMove.taskId);
+    if (!task) return setUndoMove(null);
+    const patch: { helperId?: string | null; startAt?: string | null } = {};
+    if ("helperId" in undoMove) patch.helperId = undoMove.helperId;
+    if ("startAt" in undoMove) patch.startAt = undoMove.startAt;
+    const move = undoMove;
+    setUndoMove(null);
+    run(() => moveTask(partyId, move.taskId, patch), move);
+  }
+
   function taskIdFromDrag(id: string | number) {
     const value = String(id);
-    return value.startsWith("rail:") ? value.slice(5) : value;
+    if (value.startsWith("rail:")) return value.slice(5);
+    if (value.startsWith("helper-task:")) return value.slice("helper-task:".length);
+    return value;
   }
 
   /** Map the dragged bar's left edge into axis content coordinates (scroll-aware). */
-  function contentXFromDrag(event: DragEndEvent) {
+  function contentXFromDrag(event: DragEndEvent | DragMoveEvent) {
     const translated = event.active.rect.current.translated;
     const scroller = scrollRef.current;
     if (!translated || !scroller) return null;
@@ -349,7 +405,7 @@ export function TimelineBoard({
     return scroller.scrollLeft + (translated.left - bounds.left);
   }
 
-  function startAtFromDrag(event: DragEndEvent, task: TimelineTask) {
+  function startAtFromDrag(event: DragEndEvent | DragMoveEvent, task: TimelineTask) {
     let contentX = contentXFromDrag(event);
     if (contentX == null) {
       const translated = event.active.rect.current.translated;
@@ -365,12 +421,28 @@ export function TimelineBoard({
   function handleDragStart(event: DragStartEvent) {
     suppressClickRef.current = true;
     setActiveTaskId(taskIdFromDrag(event.active.id));
-    setFlagTaskId(null);
+    setDragPreview(null);
+  }
+
+  function handleDragMove(event: DragMoveEvent) {
+    const task = taskById.get(taskIdFromDrag(event.active.id));
+    const target = event.over?.data.current as { helperId?: string; kind?: string } | undefined;
+    if (!task || target?.kind !== "timeline" || !target.helperId) {
+      setDragPreview(null);
+      return;
+    }
+    const startAt = startAtFromDrag(event, task);
+    if (!startAt) {
+      setDragPreview(null);
+      return;
+    }
+    setDragPreview({ task, helperId: target.helperId, startAt });
   }
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     setActiveTaskId(null);
+    setDragPreview(null);
     window.setTimeout(() => {
       suppressClickRef.current = false;
     }, 0);
@@ -380,19 +452,29 @@ export function TimelineBoard({
     if (!task) return;
 
     if (over.id === "recipe-rail") {
-      if (!task.start_at) return;
-      setFlagTaskId(null);
-      run(() => moveTask(partyId, task.id, { startAt: null }), { taskId: task.id, startAt: null });
+        if (task.start_at) {
+        // Pull a scheduled task off the timeline without losing who owns it.
+        runTaskMove(task, { startAt: null });
+      } else if (task.helper_id) {
+        // An unscheduled delegated task can be dragged back to the recipe rail to unassign it.
+        runTaskMove(task, { helperId: null });
+      }
       return;
     }
 
-    const lane = over.data.current as { helperId: string } | undefined;
-    if (!lane?.helperId) return;
+    const target = over.data.current as { helperId?: string; kind?: "timeline" | "delegate" } | undefined;
+    if (!target?.helperId) return;
+
+    if (target.kind === "delegate") {
+        // Reassigning through delegation keeps an existing timeline placement intact.
+      runTaskMove(task, { helperId: target.helperId });
+      return;
+    }
 
     const startAt = startAtFromDrag(event, task);
     if (!startAt) return;
 
-    const helperId = lane.helperId;
+    const helperId = target.helperId;
     if (
       helperId === task.helper_id &&
       task.start_at &&
@@ -401,27 +483,26 @@ export function TimelineBoard({
       return;
     }
 
-    setFlagTaskId(null);
-    run(() => moveTask(partyId, task.id, { helperId, startAt }), {
-      taskId: task.id,
-      helperId,
-      startAt,
+    runTaskMove(task, { helperId, startAt });
+  }
+
+  function openInspector(taskId: string, element: HTMLElement) {
+    if (suppressClickRef.current) return;
+    const rect = element.getBoundingClientRect();
+    setSelectedTaskId(taskId);
+    setInspectorAnchor({
+      top: rect.top,
+      bottom: rect.bottom,
+      left: rect.left,
+      right: rect.right,
+      width: rect.width,
+      height: rect.height,
     });
   }
 
-  function openFlag(taskId: string) {
-    if (suppressClickRef.current) return;
-    setFlagTaskId((current) => (current === taskId ? null : taskId));
-  }
-
-  function openDetails(taskId: string) {
-    setFlagTaskId(null);
-    setSelectedTaskId(taskId);
-  }
-
-  function unscheduleTask(taskId: string) {
-    setFlagTaskId(null);
-    run(() => moveTask(partyId, taskId, { startAt: null }), { taskId, startAt: null });
+  function closeInspector() {
+    setSelectedTaskId(null);
+    setInspectorAnchor(null);
   }
 
   const nowX = axis.xForTime(now);
@@ -432,13 +513,19 @@ export function TimelineBoard({
     minute: "2-digit",
   }).format(new Date(now));
   const partyX = axis.xForTime(partyStart);
+  const partyLabel = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(partyStart));
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const node = scrollRef.current;
     if (!node) return;
 
     if (scrollAnchorRef.current != null) {
-      node.scrollLeft = Math.max(0, axis.xForTime(scrollAnchorRef.current) - node.clientWidth / 2);
+      const anchor = scrollAnchorRef.current;
+      node.scrollLeft = Math.max(0, axis.xForTime(anchor.time) - anchor.viewportX);
       scrollAnchorRef.current = null;
       return;
     }
@@ -450,29 +537,96 @@ export function TimelineBoard({
     }
   }, [axis, now, partyStart, viewHours]);
 
-  function changeViewHours(hours: ViewHours) {
+  function changeZoom(hours: number, viewportX?: number) {
+    const next = Math.min(MAX_VIEW_HOURS, Math.max(MIN_VIEW_HOURS, hours));
     const node = scrollRef.current;
-    if (node) scrollAnchorRef.current = axis.timeForX(node.scrollLeft + node.clientWidth / 2);
-    setViewHours(hours);
+    if (node) {
+      const x = viewportX ?? node.clientWidth / 2;
+      scrollAnchorRef.current = {
+        time: axis.timeForX(node.scrollLeft + x),
+        viewportX: x,
+      };
+    }
+    setViewHours(next);
+    closeInspector();
+  }
+
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (!node) return;
+    const handlePinchWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      const rect = node.getBoundingClientRect();
+      const viewportX = Math.min(node.clientWidth, Math.max(0, event.clientX - rect.left));
+      scrollAnchorRef.current = {
+        time: axis.timeForX(node.scrollLeft + viewportX),
+        viewportX,
+      };
+      const factor = Math.exp(event.deltaY * 0.003);
+      setViewHours((current) => Math.min(MAX_VIEW_HOURS, Math.max(MIN_VIEW_HOURS, current * factor)));
+      closeInspector();
+    };
+    node.addEventListener("wheel", handlePinchWheel, { passive: false });
+    return () => node.removeEventListener("wheel", handlePinchWheel);
+  }, [axis]);
+
+
+  function jumpToNow() {
+    const node = scrollRef.current;
+    if (!node) return;
+    const targetX = axis.xForTime(Date.now());
+    node.scrollTo({
+      left: Math.max(0, Math.min(axis.totalWidth - node.clientWidth, targetX - node.clientWidth / 2)),
+      behavior: "smooth",
+    });
   }
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <div className="flex items-center rounded-full border border-ink/15 bg-paper p-0.5" aria-label="Visible time range">
-          {VIEW_HOUR_OPTIONS.map((hours) => (
-            <button
-              key={hours}
-              type="button"
-              aria-pressed={viewHours === hours}
-              onClick={() => changeViewHours(hours)}
-              className={`rounded-full px-2.5 py-1 text-[10px] font-bold tabular-nums transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tomato/50 ${
-                viewHours === hours ? "bg-ink text-paper" : "text-ink/45 hover:text-ink"
-              }`}
-            >
-              {hours}h
-            </button>
-          ))}
+        {undoMove ? (
+          <button
+            type="button"
+            className="btn-secondary !min-h-0 !px-3 !py-2 text-[10px]"
+            disabled={pending}
+            onClick={undoLastMove}
+          >
+            <RotateCcw size={13} /> Undo
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="btn-secondary !min-h-0 !px-3 !py-2 text-[10px]"
+          onClick={jumpToNow}
+          title={showNow ? `Current time: ${nowLabel}` : `Jump toward current time (${nowLabel})`}
+        >
+          Jump to now
+        </button>
+        <div className="flex items-center gap-1 rounded-full border border-ink/15 bg-paper p-0.5" aria-label="Timeline zoom">
+          <button
+            type="button"
+            className="grid h-7 w-7 place-items-center rounded-full text-ink/55 transition hover:bg-ink/5 hover:text-ink disabled:opacity-30"
+            disabled={viewHours >= MAX_VIEW_HOURS - 0.01}
+            onClick={() => changeZoom(viewHours * 1.35)}
+            title="Zoom out"
+            aria-label="Zoom out timeline"
+          >
+            <Minus size={13} />
+          </button>
+          <span className="min-w-[58px] text-center text-[9px] font-bold uppercase tracking-[0.08em] text-ink/40">
+            {viewHours.toFixed(viewHours < 3 ? 1 : 0)}h view
+          </span>
+          <button
+            type="button"
+            className="grid h-7 w-7 place-items-center rounded-full text-ink/55 transition hover:bg-ink/5 hover:text-ink disabled:opacity-30"
+            disabled={viewHours <= MIN_VIEW_HOURS + 0.01}
+            onClick={() => changeZoom(viewHours / 1.35)}
+            title="Zoom in"
+            aria-label="Zoom in timeline"
+          >
+            <Plus size={13} />
+          </button>
         </div>
         {unscheduled.length ? (
           <button
@@ -496,18 +650,20 @@ export function TimelineBoard({
         sensors={sensors}
         collisionDetection={collisionDetection}
         onDragStart={handleDragStart}
+        onDragMove={handleDragMove}
         onDragEnd={handleDragEnd}
         onDragCancel={() => {
           setActiveTaskId(null);
+          setDragPreview(null);
           window.setTimeout(() => {
             suppressClickRef.current = false;
           }, 0);
         }}
         measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
       >
-        <div className="editorial-panel grid h-[clamp(420px,58vh,680px)] grid-cols-[154px_minmax(0,1fr)] overflow-hidden md:grid-cols-[204px_minmax(0,1fr)]">
-          <div className="flex min-h-0 flex-col border-r border-ink/15 bg-[#f2ecdf]">
-            <div className="flex h-14 items-end border-b border-ink/15 px-4 pb-2">
+        <div className="timeline-shell editorial-panel grid h-[clamp(380px,56vh,680px)] grid-cols-[112px_minmax(0,1fr)] overflow-hidden sm:grid-cols-[154px_minmax(0,1fr)] md:grid-cols-[204px_minmax(0,1fr)]">
+          <div className="flex min-h-0 flex-col border-r border-ink/15 bg-paper-2">
+            <div className="flex h-16 items-end border-b border-ink/15 px-3 pb-2 sm:px-4">
               <p className="eyebrow">Helpers</p>
             </div>
             <div className="flex min-h-0 flex-1 flex-col">
@@ -525,6 +681,7 @@ export function TimelineBoard({
                     totals={laneTotals.get(lane.key) ?? { tasks: 0, minutes: 0, done: 0 }}
                     pending={pending}
                     onRename={(name) => run(() => renameHelper(partyId, lane.helperId, name))}
+                    onColor={(color) => run(() => setHelperColor(partyId, lane.helperId, color))}
                     onRemove={() => {
                       if (!window.confirm(`Remove ${lane.name}? Their tasks stay on the recipe rail until reassigned.`))
                         return;
@@ -541,7 +698,7 @@ export function TimelineBoard({
                 const name = newHelper.trim();
                 if (!name) return;
                 setNewHelper("");
-                run(() => addHelper(partyId, name));
+                run(() => addHelper(partyId, name, newHelperColor));
               }}
             >
               <input
@@ -549,6 +706,11 @@ export function TimelineBoard({
                 placeholder="Add helper"
                 value={newHelper}
                 onChange={(event) => setNewHelper(event.target.value)}
+              />
+              <ColorDotPicker
+                color={newHelperColor}
+                label="Choose new helper color"
+                onChange={setNewHelperColor}
               />
               <button
                 type="submit"
@@ -561,42 +723,52 @@ export function TimelineBoard({
             </form>
           </div>
 
-          <div ref={scrollRef} className="min-w-0 overflow-x-auto overflow-y-hidden [scrollbar-color:rgba(41,35,31,0.25)_transparent] [scrollbar-width:thin]">
+          <div ref={scrollRef} onScroll={() => inspectorAnchor ? closeInspector() : undefined} className="min-w-0 overflow-x-auto overflow-y-hidden [scrollbar-color:rgb(var(--ink-rgb)/0.25)_transparent] [scrollbar-width:thin]">
             <div className="relative flex h-full flex-col" style={{ width: Math.max(axis.totalWidth, viewportWidth) }}>
-              <div className="flex h-14 border-b border-ink/15">
-                {axis.columns.map((column) => {
+              <div className="relative h-16 shrink-0 border-b border-ink/15 bg-paper-2/35" aria-label="Timeline ruler">
+                {axis.columns.map((column, columnIndex) => {
                   const isPartyHour = partyStart >= column.start && partyStart < column.end;
-                  const subdivisions = tickMinutes < 60 ? Math.round(60 / tickMinutes) : 1;
+                  const labelMinutes = gridLabelMinutes(viewHours);
+                  const tickStep = gridTickMinutes(viewHours);
+                  const tickCount = Math.floor(60 / tickStep);
                   return (
-                    <div
-                      key={column.start}
-                      style={{ width: column.width }}
-                      className={`relative flex shrink-0 flex-col justify-end border-r border-ink/10 px-1.5 pb-2 ${
-                        isPartyHour ? "bg-tomato/10" : column.isWeekend ? "bg-ink/[0.03]" : ""
-                      }`}
-                    >
-                      {column.sublabel ? (
-                        <span className="truncate text-[9px] uppercase tracking-[0.08em] text-ink/40">
-                          {column.sublabel}
-                        </span>
-                      ) : null}
+                    <div key={column.start}>
                       <span
-                        className={`truncate text-[11px] font-bold uppercase tracking-[0.08em] ${
-                          isPartyHour ? "text-tomato" : "text-ink/70"
-                        }`}
+                        className={`pointer-events-none absolute inset-y-0 border-r border-ink/15 ${isPartyHour ? "bg-tomato/[0.07]" : column.isWeekend ? "bg-ink/[0.025]" : ""}`}
+                        style={{ left: column.x, width: column.width }}
+                      />
+                      <span
+                        className="pointer-events-none absolute bottom-0 z-[2] h-3 w-px bg-ink/35"
+                        style={{ left: column.x }}
+                      />
+                      <span
+                        className={`pointer-events-none absolute bottom-[18px] z-[2] -translate-x-1/2 whitespace-nowrap text-[11px] font-bold uppercase tracking-[0.06em] ${isPartyHour ? "text-tomato" : "text-ink/70"}`}
+                        style={{ left: column.x }}
                       >
                         {column.label}
                       </span>
-                      {subdivisions > 1 ? (
-                        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2">
-                          {Array.from({ length: subdivisions - 1 }, (_, index) => (
-                            <span
-                              key={index}
-                              className="absolute bottom-0 w-px bg-ink/20"
-                              style={{ left: `${((index + 1) / subdivisions) * 100}%`, height: index % 2 === 1 && tickMinutes === 10 ? 8 : 5 }}
-                            />
-                          ))}
-                        </div>
+                      {column.sublabel ? (
+                        <span className="pointer-events-none absolute top-2 z-[2] whitespace-nowrap text-[8px] font-bold uppercase tracking-[0.1em] text-ink/35" style={{ left: column.x + 7 }}>
+                          {column.sublabel}
+                        </span>
+                      ) : null}
+                      {tickCount > 1 ? Array.from({ length: tickCount - 1 }, (_, index) => {
+                        const minute = (index + 1) * tickStep;
+                        const x = column.x + column.width * (minute / 60);
+                        const showLabel = labelMinutes < 60 && minute % labelMinutes === 0;
+                        return (
+                          <span key={`${column.start}:${minute}`}>
+                            <span className="pointer-events-none absolute bottom-0 z-[2] w-px bg-ink/22" style={{ left: x, height: showLabel ? 10 : 6 }} />
+                            {showLabel ? (
+                              <span className="pointer-events-none absolute bottom-[18px] z-[2] -translate-x-1/2 whitespace-nowrap text-[8px] font-semibold tabular-nums text-ink/42" style={{ left: x }}>
+                                :{String(minute).padStart(2, "0")}
+                              </span>
+                            ) : null}
+                          </span>
+                        );
+                      }) : null}
+                      {columnIndex === axis.columns.length - 1 ? (
+                        <span className="pointer-events-none absolute inset-y-0 z-[2] w-px bg-ink/20" style={{ left: column.x + column.width }} />
                       ) : null}
                     </div>
                   );
@@ -616,21 +788,21 @@ export function TimelineBoard({
                       axis={axis}
                       tickMinutes={tickMinutes}
                       tasks={visibleByLane.get(lane.key) ?? []}
-                      flagTaskId={flagTaskId}
-                      onFlag={openFlag}
-                      onDetails={openDetails}
-                      onUnschedule={unscheduleTask}
-                      onCloseFlag={() => setFlagTaskId(null)}
+                      onInspect={openInspector}
                       activeTaskId={activeTaskId}
-                      timeZone={timeZone}
+                      preview={dragPreview?.helperId === lane.helperId ? dragPreview : null}
                     />
                   ))
                 )}
                 <div className="pointer-events-none absolute inset-0">
                   <div
-                    className="absolute top-0 h-full border-l-2 border-dashed border-tomato/45"
+                    className="absolute top-0 h-full border-l-2 border-dashed border-tomato/55"
                     style={{ left: partyX }}
-                  />
+                  >
+                    <span className="absolute bottom-0 left-0 -translate-x-1/2 rounded-t bg-tomato px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.08em] text-paper">
+                      Dinner · {partyLabel}
+                    </span>
+                  </div>
                   {showNow ? (
                     <div className="absolute top-0 h-full border-l-2 border-olive" style={{ left: nowX }}>
                       <span className="absolute left-0 top-0 -translate-x-1/2 rounded-b bg-olive px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.08em] text-paper">
@@ -645,7 +817,15 @@ export function TimelineBoard({
           </div>
         </div>
 
-        <RecipeTaskRail groups={recipeGroups} onDetails={openDetails} />
+        <RecipeTaskRail groups={recipeGroups} lanes={lanes} onInspect={openInspector} onRecipeColor={(recipeId, color) => run(() => setRecipeTimelineColor(partyId, recipeId, color))} />
+
+        <HelperDelegationBoard
+          lanes={lanes}
+          tasks={optimisticTasks}
+          onInspect={openInspector}
+          onHelperColor={(helperId, color) => run(() => setHelperColor(partyId, helperId, color))}
+          onRecipeColor={(recipeId, color) => run(() => setRecipeTimelineColor(partyId, recipeId, color))}
+        />
 
         <DragOverlay dropAnimation={null}>
           {activeTask ? (
@@ -666,32 +846,82 @@ export function TimelineBoard({
         </DragOverlay>
       </DndContext>
 
-      <TaskDetail
+      <TaskInspector
         task={selectedTask ?? null}
+        anchor={inspectorAnchor}
         lanes={lanes}
         partyId={partyId}
         timeZone={timeZone}
-        onClose={() => setSelectedTaskId(null)}
-        onAssign={(helperId) =>
-          selectedTask
-            ? run(() => moveTask(partyId, selectedTask.id, { helperId }), {
-                taskId: selectedTask.id,
-                helperId,
-              })
-            : undefined
-        }
-        onUnschedule={() =>
-          selectedTask
-            ? run(() => moveTask(partyId, selectedTask.id, { startAt: null }), {
-                taskId: selectedTask.id,
-                startAt: null,
-              })
-            : undefined
-        }
-        onDuration={(minutes) =>
-          selectedTask ? run(() => setTaskDuration(partyId, selectedTask.id, minutes)) : undefined
-        }
+        onClose={closeInspector}
+        onAssign={(helperId) => selectedTask ? runTaskMove(selectedTask, { helperId }) : undefined}
+        onUnschedule={() => selectedTask ? runTaskMove(selectedTask, { startAt: null }) : undefined}
+        onUnassign={() => selectedTask ? runTaskMove(selectedTask, { helperId: null }) : undefined}
+        onDuration={(minutes) => selectedTask ? run(() => setTaskDuration(partyId, selectedTask.id, minutes)) : undefined}
       />
+    </div>
+  );
+}
+
+function ColorDotPicker({
+  color,
+  label,
+  onChange,
+}: {
+  color: string;
+  label: string;
+  onChange: (color: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const hex = helperColorHex(color);
+  return (
+    <div className="relative shrink-0">
+      <button
+        type="button"
+        aria-label={label}
+        aria-expanded={open}
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen((value) => !value);
+        }}
+        className="grid h-6 w-6 place-items-center rounded-full border border-transparent transition duration-150 hover:-translate-y-0.5 hover:border-ink/20 hover:bg-paper hover:shadow-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/25"
+      >
+        <span
+          className="h-3.5 w-3.5 rounded-full border border-transparent transition group-hover:border-ink/20"
+          style={{ backgroundColor: hex, boxShadow: "0 0 0 1px rgba(41,35,31,.12)" }}
+        />
+      </button>
+      {open ? (
+        <div
+          className="absolute left-0 top-7 z-50 w-44 rounded-[3px] border border-ink/15 bg-paper p-2.5 shadow-card"
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <p className="mb-2 text-[9px] font-bold uppercase tracking-[0.12em] text-ink/45">Choose color</p>
+          <div className="grid grid-cols-6 gap-1.5">
+            {ACCENT_COLOR_PALETTE.map((swatch) => (
+              <button
+                key={swatch}
+                type="button"
+                aria-label={`Use ${swatch}`}
+                onClick={() => {
+                  onChange(swatch);
+                  setOpen(false);
+                }}
+                className={`h-5 w-5 rounded-full border-2 transition hover:-translate-y-0.5 ${swatch.toLowerCase() === hex.toLowerCase() ? "border-ink" : "border-paper"}`}
+                style={{ backgroundColor: swatch, boxShadow: "0 0 0 1px rgba(41,35,31,.12)" }}
+              />
+            ))}
+          </div>
+          <label className="mt-2 flex items-center justify-between gap-2 border-t border-ink/10 pt-2 text-[10px] font-semibold text-ink/55">
+            Custom
+            <input
+              type="color"
+              value={hex}
+              onChange={(event) => onChange(event.target.value)}
+              className="h-6 w-8 cursor-pointer border-0 bg-transparent p-0"
+            />
+          </label>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -701,17 +931,18 @@ function LaneLabel({
   totals,
   pending,
   onRename,
+  onColor,
   onRemove,
 }: {
   lane: Lane;
   totals: { tasks: number; minutes: number; done: number };
   pending: boolean;
   onRename: (name: string) => void;
+  onColor: (color: string) => void;
   onRemove: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(lane.name);
-  const style = styleFor(lane.color);
 
   function commit() {
     setEditing(false);
@@ -720,16 +951,11 @@ function LaneLabel({
   }
 
   return (
-    <div className="group flex min-h-0 flex-1 items-center gap-2.5 border-b border-ink/10 px-3">
-      <span className={`h-8 w-1.5 shrink-0 rounded-full ${style.dot}`} />
+    <div className="group flex min-h-0 flex-1 items-center gap-1 border-b border-ink/10 px-2 sm:gap-1.5 sm:px-3">
+      <ColorDotPicker color={lane.color} label={`Change ${lane.name} color`} onChange={onColor} />
       <div className="min-w-0 flex-1">
         {editing ? (
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              commit();
-            }}
-          >
+          <form onSubmit={(event) => { event.preventDefault(); commit(); }}>
             <input
               autoFocus
               className="field !px-2 !py-1 text-xs"
@@ -747,11 +973,8 @@ function LaneLabel({
         ) : (
           <button
             type="button"
-            className="block max-w-full truncate text-left text-sm font-bold"
-            onClick={() => {
-              setDraft(lane.name);
-              setEditing(true);
-            }}
+            className="block max-w-full truncate text-left text-xs font-bold sm:text-sm"
+            onClick={() => { setDraft(lane.name); setEditing(true); }}
           >
             {lane.name}
           </button>
@@ -763,7 +986,7 @@ function LaneLabel({
       <button
         type="button"
         disabled={pending}
-        onClick={() => onRemove()}
+        onClick={onRemove}
         aria-label={`Remove ${lane.name}`}
         className="shrink-0 text-ink/25 opacity-0 transition hover:text-tomato group-hover:opacity-100"
       >
@@ -778,29 +1001,21 @@ function LaneTrack({
   axis,
   tickMinutes,
   tasks,
-  flagTaskId,
-  onFlag,
-  onDetails,
-  onUnschedule,
-  onCloseFlag,
+  onInspect,
   activeTaskId,
-  timeZone,
+  preview,
 }: {
   lane: Lane;
   axis: ReturnType<typeof buildAxis>;
   tickMinutes: number;
   tasks: TimelineTask[];
-  flagTaskId: string | null;
-  onFlag: (id: string) => void;
-  onDetails: (id: string) => void;
-  onUnschedule: (id: string) => void;
-  onCloseFlag: () => void;
+  onInspect: (id: string, element: HTMLElement) => void;
   activeTaskId: string | null;
-  timeZone: string;
+  preview: DragPreview | null;
 }) {
   const { setNodeRef, isOver } = useDroppable({
     id: `lane:${lane.key}`,
-    data: { helperId: lane.helperId },
+    data: { helperId: lane.helperId, kind: "timeline" },
   });
 
   return (
@@ -809,22 +1024,28 @@ function LaneTrack({
       className={`relative min-h-0 flex-1 border-b border-ink/10 transition-colors ${
         isOver ? styleFor(lane.color).soft : ""
       }`}
-      style={{
-        backgroundImage: laneGridBackground(axis.columnWidth, tickMinutes),
-      }}
+      style={{ backgroundImage: laneGridBackground(axis.columnWidth, tickMinutes) }}
     >
+      {preview ? (
+        <div
+          className="pointer-events-none absolute top-1/2 z-[2] -translate-y-1/2 rounded-full border-2 border-dashed border-ink/45 bg-paper/55 shadow-[0_8px_20px_rgba(41,35,31,0.14)]"
+          style={{
+            left: axis.xForTime(Date.parse(preview.startAt)),
+            width: barWidthPx(axis, Date.parse(preview.startAt), minutesOf(preview.task)),
+            height: BAR_HEIGHT,
+          }}
+        >
+          <div className="h-full w-full rounded-full opacity-25" style={{ background: recipeStyle(preview.task).background }} />
+        </div>
+      ) : null}
       {tasks.map((task) => (
         <TaskBar
           key={task.id}
           task={task}
           axis={axis}
-          onFlag={onFlag}
+          onInspect={onInspect}
           dimmed={activeTaskId === task.id}
-          flagged={flagTaskId === task.id}
-          timeZone={timeZone}
-          onDetails={() => onDetails(task.id)}
-          onUnschedule={() => onUnschedule(task.id)}
-          onCloseFlag={onCloseFlag}
+          helperColor={helperColorHex(lane.color)}
         />
       ))}
     </div>
@@ -834,78 +1055,56 @@ function LaneTrack({
 function TaskBar({
   task,
   axis,
-  onFlag,
+  onInspect,
   dimmed,
-  flagged,
-  timeZone,
-  onDetails,
-  onUnschedule,
-  onCloseFlag,
+  helperColor,
 }: {
   task: TimelineTask;
   axis: ReturnType<typeof buildAxis>;
-  onFlag: (id: string) => void;
+  onInspect: (id: string, element: HTMLElement) => void;
   dimmed: boolean;
-  flagged: boolean;
-  timeZone: string;
-  onDetails: () => void;
-  onUnschedule: () => void;
-  onCloseFlag: () => void;
+  helperColor: string;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id });
-  const nodeRef = useRef<HTMLButtonElement | null>(null);
-  const [anchor, setAnchor] = useState<{ top: number; left: number; openUp: boolean } | null>(null);
+  const nodeRef = useRef<HTMLDivElement | null>(null);
   const start = Date.parse(task.start_at!);
   const left = axis.xForTime(start);
   const width = barWidthPx(axis, start, minutesOf(task));
   const done = task.status === "done";
   const color = recipeStyle(task);
-  const compact = width < 88;
+  const compact = width < 100;
 
-  function setRefs(node: HTMLButtonElement | null) {
+  function setRefs(node: HTMLDivElement | null) {
     nodeRef.current = node;
     setNodeRef(node);
   }
 
-  useLayoutEffect(() => {
-    if (!flagged || !nodeRef.current) {
-      setAnchor(null);
-      return;
-    }
-    const rect = nodeRef.current.getBoundingClientRect();
-    const openUp = rect.bottom + 220 > window.innerHeight;
-    setAnchor({
-      top: openUp ? rect.top - 8 : rect.bottom + 8,
-      left: rect.left + rect.width / 2,
-      openUp,
-    });
-  }, [flagged, left, width]);
-
   return (
-    <>
+    <div
+      ref={setRefs}
+      className={`group absolute flex touch-none items-stretch overflow-hidden rounded-full border transition duration-150 ${
+        dimmed || isDragging ? "opacity-25" : "hover:brightness-[1.04] hover:shadow-[0_7px_16px_rgba(41,35,31,0.16)]"
+      }`}
+      style={{
+        left,
+        width,
+        height: BAR_HEIGHT,
+        top: "50%",
+        transform: "translateY(-50%)",
+        background: done ? "rgba(113, 132, 87, 0.16)" : color.background,
+        borderColor: helperColor,
+        borderWidth: 3,
+        color: done ? "#29231f" : color.color,
+        zIndex: 1,
+      }}
+      title={`${task.title} · ${minutesOf(task)} min${task.recipe_title ? ` · ${task.recipe_title}` : ""}`}
+    >
       <button
-        ref={setRefs}
         type="button"
         {...listeners}
         {...attributes}
-        onClick={() => onFlag(task.id)}
-        className={`absolute flex touch-none items-center gap-1.5 overflow-hidden rounded-full border text-left transition ${
-          compact ? "px-2" : "px-3"
-        } ${dimmed || isDragging ? "opacity-30" : "hover:-translate-y-[calc(50%+1px)]"} ${
-          flagged ? "ring-2 ring-ink/30 ring-offset-1 ring-offset-transparent" : ""
-        }`}
-        style={{
-          left,
-          width,
-          height: BAR_HEIGHT,
-          top: "50%",
-          transform: "translateY(-50%)",
-          background: done ? "rgba(113, 132, 87, 0.16)" : color.background,
-          borderColor: done ? "rgba(113, 132, 87, 0.4)" : color.border,
-          color: done ? "#29231f" : color.color,
-          zIndex: flagged ? 5 : 1,
-        }}
-        title={`${task.title} · ${minutesOf(task)} min${task.recipe_title ? ` · ${task.recipe_title}` : ""}`}
+        onClick={(event) => onInspect(task.id, nodeRef.current ?? event.currentTarget)}
+        className={`flex min-w-0 flex-1 items-center gap-1.5 text-left ${compact ? "px-2" : "px-3"}`}
       >
         {done ? <Check size={12} className="shrink-0" /> : null}
         {task.locked ? <Lock size={11} className="shrink-0 opacity-70" /> : null}
@@ -921,164 +1120,233 @@ function TaskBar({
           ) : null}
         </span>
       </button>
-      {flagged && anchor ? (
-        <TaskFlag
-          task={task}
-          anchor={anchor}
-          timeZone={timeZone}
-          onClose={onCloseFlag}
-          onDetails={onDetails}
-          onRemove={onUnschedule}
-        />
-      ) : null}
-    </>
+    </div>
   );
 }
 
-function TaskFlag({
+
+function HelperDelegationBoard({
+  lanes,
+  tasks,
+  onInspect,
+  onHelperColor,
+  onRecipeColor,
+}: {
+  lanes: Lane[];
+  tasks: TimelineTask[];
+  onInspect: (id: string, element: HTMLElement) => void;
+  onHelperColor: (helperId: string, color: string) => void;
+  onRecipeColor: (recipeId: string, color: string) => void;
+}) {
+  const delegated = tasks.filter((task) => task.helper_id).length;
+  const unassigned = tasks.length - delegated;
+
+  return (
+    <section className="editorial-panel p-4">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <p className="eyebrow">Delegate</p>
+          <p className="mt-1 text-xs text-ink/45">
+            Drop tasks onto a helper. Recipe groups stay in execution order, and scheduled tasks remain shaded.
+          </p>
+        </div>
+        <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink/40">
+          {delegated} delegated · {unassigned} unassigned
+        </p>
+      </div>
+
+      {lanes.length === 0 ? (
+        <p className="mt-4 text-sm text-ink/45">Add a helper above to create delegation lanes.</p>
+      ) : (
+        <div className="mt-4 divide-y divide-ink/10 border-y border-ink/10">
+          {lanes.map((lane) => (
+            <HelperDropZone
+              key={lane.helperId}
+              lane={lane}
+              tasks={tasks.filter((task) => task.helper_id === lane.helperId)}
+              onInspect={onInspect}
+              onHelperColor={(color) => onHelperColor(lane.helperId, color)}
+              onRecipeColor={onRecipeColor}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function HelperDropZone({
+  lane,
+  tasks,
+  onInspect,
+  onHelperColor,
+  onRecipeColor,
+}: {
+  lane: Lane;
+  tasks: TimelineTask[];
+  onInspect: (id: string, element: HTMLElement) => void;
+  onHelperColor: (color: string) => void;
+  onRecipeColor: (recipeId: string, color: string) => void;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const { setNodeRef, isOver } = useDroppable({
+    id: `delegate:${lane.helperId}`,
+    data: { helperId: lane.helperId, kind: "delegate" },
+  });
+  const groups = groupTasksByRecipe(tasks);
+  const helperColor = helperColorHex(lane.color);
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`border-l-4 transition duration-150 ${isOver ? "ring-1 ring-inset ring-ink/15" : ""}`}
+      style={{
+        backgroundColor: hexToRgba(helperColor, isOver ? 0.15 : 0.075),
+        borderLeftColor: hexToRgba(helperColor, 0.7),
+      }}
+    >
+      <div className="flex min-h-14 items-center gap-2 px-2 py-2.5">
+        <button
+          type="button"
+          onClick={() => setCollapsed((value) => !value)}
+          className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-ink/45 transition hover:bg-ink/5 hover:text-ink"
+          aria-label={`${collapsed ? "Expand" : "Collapse"} ${lane.name}`}
+        >
+          <ChevronDown size={15} className={`transition-transform ${collapsed ? "-rotate-90" : ""}`} />
+        </button>
+        <ColorDotPicker color={lane.color} label={`Change ${lane.name} color`} onChange={onHelperColor} />
+        <p className="min-w-0 flex-1 truncate text-sm font-bold">{lane.name}</p>
+        <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink/35">
+          {tasks.length} task{tasks.length === 1 ? "" : "s"}
+        </span>
+      </div>
+
+      {!collapsed ? (
+        <div className="space-y-1.5 pb-3 pl-3 pr-2 sm:pl-12">
+          {groups.length ? groups.map((group) => (
+            <div
+              key={group.key}
+              className="grid min-w-0 grid-cols-1 gap-2 rounded-[3px] border px-2 py-2 sm:grid-cols-[minmax(130px,190px)_minmax(0,1fr)] sm:items-center sm:gap-3"
+              style={{
+                backgroundColor: hexToRgba(group.tasks[0]?.recipe_color ?? recipeStyle(group.tasks[0]).background, 0.09),
+                borderColor: hexToRgba(group.tasks[0]?.recipe_color ?? recipeStyle(group.tasks[0]).background, 0.16),
+              }}
+            >
+              <div className="flex min-w-0 items-center gap-1">
+                {group.recipeId ? (
+                  <ColorDotPicker
+                    color={group.tasks[0]?.recipe_color ?? recipeStyle(group.tasks[0]).background}
+                    label={`Change ${group.title} color`}
+                    onChange={(color) => onRecipeColor(group.recipeId!, color)}
+                  />
+                ) : (
+                  <span className="h-6 w-6" />
+                )}
+                <div className="min-w-0">
+                  <p className="truncate text-[11px] font-bold">{group.title}</p>
+                  <p className="text-[9px] uppercase tracking-[0.08em] text-ink/35">{group.totalMinutes} min</p>
+                </div>
+              </div>
+              <div className="min-w-0 overflow-x-auto pb-1 [scrollbar-color:rgb(var(--ink-rgb)/0.2)_transparent] [scrollbar-width:thin]">
+                <div className="flex w-max min-w-full items-center gap-1.5">
+                  {group.tasks.map((task) => (
+                    <DelegatedTaskChip
+                      key={task.id}
+                      task={task}
+                      helperColor={helperColor}
+                      onInspect={onInspect}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          )) : (
+            <div className="grid min-h-12 place-items-center border border-dashed border-ink/15 px-3 text-center text-[11px] text-ink/35">
+              Drop a task here
+            </div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function DelegatedTaskChip({
   task,
-  anchor,
-  timeZone,
-  onClose,
-  onDetails,
-  onRemove,
+  helperColor,
+  onInspect,
 }: {
   task: TimelineTask;
-  anchor: { top: number; left: number; openUp: boolean };
-  timeZone: string;
-  onClose: () => void;
-  onDetails: () => void;
-  onRemove: () => void;
+  helperColor: string;
+  onInspect: (id: string, element: HTMLElement) => void;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [mounted, setMounted] = useState(false);
+  const scheduled = Boolean(task.start_at);
+  const color = recipeStyle(task);
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `helper-task:${task.id}`,
+    data: { taskId: task.id },
+  });
+  const width = Math.max(68, minutesOf(task) * 7);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    function onPointerDown(event: PointerEvent) {
-      if (ref.current && !ref.current.contains(event.target as Node)) onClose();
-    }
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
-
-  const when = new Intl.DateTimeFormat("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone,
-  }).format(new Date(task.start_at!));
-
-  if (!mounted) return null;
-
-  return createPortal(
+  return (
     <div
-      ref={ref}
-      className="fixed z-[90] w-[240px] -translate-x-1/2 rounded-[2px] border border-ink/20 bg-paper shadow-card"
+      ref={setNodeRef}
+      className={`group flex h-9 shrink-0 items-center overflow-hidden rounded-full border-[3px] transition ${
+        scheduled ? "bg-[#d9d2c4] text-ink/40" : isDragging ? "opacity-30" : "hover:-translate-y-0.5 hover:shadow-sm"
+      }`}
       style={{
-        top: anchor.top,
-        left: Math.min(Math.max(anchor.left, 128), window.innerWidth - 128),
-        transform: anchor.openUp ? "translate(-50%, -100%)" : "translate(-50%, 0)",
+        width,
+        background: scheduled ? undefined : color.background,
+        borderColor: helperColor,
+        color: scheduled ? undefined : color.color,
       }}
-      role="dialog"
-      aria-label={`${task.title} details`}
+      title={`${task.title} · ${minutesOf(task)} min${scheduled ? " · scheduled" : " · delegated"}`}
     >
-      <div
-        className={`absolute left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 border-ink/20 bg-paper ${
-          anchor.openUp
-            ? "bottom-0 translate-y-1/2 border-b border-r"
-            : "top-0 -translate-y-1/2 border-l border-t"
-        }`}
-      />
-      <div className="relative space-y-2.5 p-3">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="truncate text-sm font-bold leading-tight">{task.title}</p>
-            <p className="mt-0.5 text-[10px] uppercase tracking-[0.1em] text-ink/45">
-              {when} · {minutesOf(task)} min
-              {task.recipe_title ? ` · ${task.recipe_title}` : ""}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="shrink-0 text-ink/35 hover:text-ink"
-            aria-label="Close"
-          >
-            <X size={14} />
-          </button>
-        </div>
-
-        {task.steps.length ? (
-          <ol className="max-h-[120px] space-y-1.5 overflow-y-auto border-t border-ink/10 pt-2">
-            {task.steps.map((step, index) => (
-              <li key={step.id} className="flex gap-2 text-xs leading-snug text-ink/70">
-                <span className="shrink-0 font-bold tabular-nums text-ink/35">
-                  {String(index + 1).padStart(2, "0")}
-                </span>
-                <span className="min-w-0">
-                  <span className="font-semibold text-ink">{step.title}</span>
-                  {step.duration_minutes ? (
-                    <span className="ml-1.5 text-[10px] uppercase tracking-[0.08em] text-ink/40">
-                      {step.duration_minutes}m
-                    </span>
-                  ) : null}
-                </span>
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <p className="border-t border-ink/10 pt-2 text-xs leading-relaxed text-ink/55">
-            {task.description || "No steps in this task."}
-          </p>
-        )}
-
-        <div className="flex items-center gap-2 border-t border-ink/10 pt-2">
-          <button type="button" className="chip hover:border-tomato/40 hover:text-tomato" onClick={onRemove}>
-            <X size={12} /> Remove
-          </button>
-          <button type="button" className="chip hover:border-ink/40" onClick={onDetails}>
-            Details
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
+      <button
+        type="button"
+        {...listeners}
+        {...attributes}
+        onClick={(event) => onInspect(task.id, event.currentTarget)}
+        className="flex min-w-0 flex-1 touch-none items-center px-2.5 py-2 text-left"
+      >
+        <span className={`truncate text-[10px] font-bold ${scheduled ? "line-through decoration-ink/30" : ""}`}>
+          {task.title}
+        </span>
+      </button>
+    </div>
   );
 }
 
 function RecipeTaskRail({
   groups,
-  onDetails,
+  lanes,
+  onInspect,
+  onRecipeColor,
 }: {
   groups: RecipeGroup[];
-  onDetails: (id: string) => void;
+  lanes: Lane[];
+  onInspect: (id: string, element: HTMLElement) => void;
+  onRecipeColor: (recipeId: string, color: string) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: "recipe-rail" });
   const remaining = groups.reduce((sum, group) => sum + (group.tasks.length - group.scheduledCount), 0);
+  const helperColorById = new Map(lanes.map((lane) => [lane.helperId, helperColorHex(lane.color)]));
 
   return (
-    <div
-      ref={setNodeRef}
-      className={`editorial-panel p-4 transition-colors ${isOver ? "bg-paper-2 ring-1 ring-ink/15" : ""}`}
-    >
+    <div ref={setNodeRef} className={`editorial-panel p-4 transition-colors ${isOver ? "bg-paper-2 ring-1 ring-ink/15" : ""}`}>
       <p className="eyebrow">Recipes · {remaining} to place</p>
-
       {groups.length === 0 ? (
         <p className="mt-3 text-xs text-ink/45">No recipe tasks yet. Add dishes to the menu to populate this rail.</p>
       ) : (
         <div className="mt-3 space-y-3">
           {groups.map((group) => (
-            <RecipeProgressBar key={group.key} group={group} onDetails={onDetails} />
+            <RecipeProgressBar
+              key={group.key}
+              group={group}
+              helperColorById={helperColorById}
+              onInspect={onInspect}
+              onRecipeColor={onRecipeColor}
+            />
           ))}
         </div>
       )}
@@ -1088,26 +1356,55 @@ function RecipeTaskRail({
 
 function RecipeProgressBar({
   group,
-  onDetails,
+  helperColorById,
+  onInspect,
+  onRecipeColor,
 }: {
   group: RecipeGroup;
-  onDetails: (id: string) => void;
+  helperColorById: Map<string, string>;
+  onInspect: (id: string, element: HTMLElement) => void;
+  onRecipeColor: (recipeId: string, color: string) => void;
 }) {
   const placed = group.scheduledCount;
   const total = group.tasks.length;
+  const sample = group.tasks[0];
+
+  const recipeColor = sample ? (sample.recipe_color ?? recipeStyle(sample).background) : "#81786e";
 
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-baseline justify-between gap-3">
-        <p className="truncate text-sm font-bold">{group.title}</p>
+    <div
+      className="space-y-1.5 rounded-[4px] border px-3 py-2.5"
+      style={{
+        backgroundColor: hexToRgba(recipeColor, 0.1),
+        borderColor: hexToRgba(recipeColor, 0.2),
+      }}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-1">
+          {group.recipeId && sample ? (
+            <ColorDotPicker
+              color={sample.recipe_color ?? recipeStyle(sample).background}
+              label={`Change ${group.title} color`}
+              onChange={(color) => onRecipeColor(group.recipeId!, color)}
+            />
+          ) : null}
+          <p className="truncate text-sm font-bold">{group.title}</p>
+        </div>
         <p className="shrink-0 text-[10px] uppercase tracking-[0.1em] text-ink/40">
           {placed}/{total} placed · {group.totalMinutes} min
         </p>
       </div>
-      <div className="flex h-10 items-stretch gap-1.5">
-        {group.tasks.map((task) => (
-          <RecipeSegment key={task.id} task={task} onDetails={onDetails} />
-        ))}
+      <div className="min-w-0 overflow-x-auto pb-1 [scrollbar-color:rgb(var(--ink-rgb)/0.2)_transparent] [scrollbar-width:thin]">
+        <div className="flex h-10 w-max min-w-full items-stretch gap-1.5">
+          {group.tasks.map((task) => (
+            <RecipeSegment
+              key={task.id}
+              task={task}
+              helperColor={task.helper_id ? helperColorById.get(task.helper_id) ?? null : null}
+              onInspect={onInspect}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -1115,10 +1412,12 @@ function RecipeProgressBar({
 
 function RecipeSegment({
   task,
-  onDetails,
+  helperColor,
+  onInspect,
 }: {
   task: TimelineTask;
-  onDetails: (id: string) => void;
+  helperColor: string | null;
+  onInspect: (id: string, element: HTMLElement) => void;
 }) {
   const scheduled = Boolean(task.start_at);
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -1128,165 +1427,180 @@ function RecipeSegment({
   });
   const color = recipeStyle(task);
   const minutes = minutesOf(task);
+  const width = Math.max(68, minutes * 7);
 
   return (
     <button
       ref={setNodeRef}
       type="button"
       {...(scheduled ? {} : { ...listeners, ...attributes })}
-      onClick={() => onDetails(task.id)}
-      disabled={scheduled}
+      onClick={(event) => onInspect(task.id, event.currentTarget)}
       title={`${task.title} · ${minutes} min${scheduled ? " · on timeline" : ""}`}
-      className={`flex min-w-[2.5rem] touch-none items-center overflow-hidden rounded-full border px-3 text-left transition ${
+      className={`flex shrink-0 touch-none items-center overflow-hidden rounded-full border-[3px] px-3 text-left transition ${
         scheduled
-          ? "cursor-default border-ink/10 bg-[#d9d2c4] text-ink/40"
+          ? "cursor-pointer bg-[#d9d2c4] text-ink/40 hover:-translate-y-0.5 hover:shadow-sm"
           : isDragging
             ? "opacity-30"
-            : "hover:brightness-105"
+            : "hover:-translate-y-0.5 hover:brightness-105 hover:shadow-sm"
       }`}
       style={{
-        flex: `${minutes} 1 0`,
+        width,
         background: scheduled ? undefined : color.background,
-        borderColor: scheduled ? undefined : color.border,
+        borderColor: helperColor ?? color.border,
         color: scheduled ? undefined : color.color,
       }}
     >
-      <span
-        className={`block w-full truncate text-[10px] font-bold leading-tight ${
-          scheduled ? "line-through decoration-ink/35" : ""
-        }`}
-      >
+      <span className={`block w-full truncate text-[10px] font-bold leading-tight ${scheduled ? "line-through decoration-ink/35" : ""}`}>
         {task.title}
       </span>
     </button>
   );
 }
 
-function TaskDetail({
+function TaskInspector({
   task,
+  anchor,
   lanes,
   partyId,
   timeZone,
   onClose,
   onAssign,
   onUnschedule,
+  onUnassign,
   onDuration,
 }: {
   task: TimelineTask | null;
+  anchor: InspectorAnchor | null;
   lanes: Lane[];
   partyId: string;
   timeZone: string;
   onClose: () => void;
   onAssign: (helperId: string | null) => void;
   onUnschedule: () => void;
+  onUnassign: () => void;
   onDuration: (minutes: number) => void;
 }) {
-  if (!task) return null;
+  const ref = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(false);
 
+  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    if (!task || !anchor) return;
+    function outside(event: PointerEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) onClose();
+    }
+    function keydown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", keydown);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", keydown);
+    };
+  }, [task, anchor, onClose]);
+
+  if (!mounted || !task || !anchor) return null;
+
+  const openUp = anchor.bottom + 360 > window.innerHeight && anchor.top > 360;
+  const left = Math.min(Math.max(anchor.left + anchor.width / 2, 165), window.innerWidth - 165);
   const when = task.start_at
     ? new Intl.DateTimeFormat("en-US", {
         weekday: "short",
-        month: "short",
-        day: "numeric",
         hour: "numeric",
         minute: "2-digit",
         timeZone,
       }).format(new Date(task.start_at))
-    : "Not on timeline";
+    : "Not scheduled";
 
-  return (
-    <Modal open onClose={onClose} title={task.title}>
-      <div className="space-y-5">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="chip">{when}</span>
-          <span className="chip">{minutesOf(task)} min</span>
-          {task.recipe_title ? <span className="chip">{task.recipe_title}</span> : null}
-          {task.steps.length ? (
-            <span className="chip">
-              {task.steps.length} step{task.steps.length === 1 ? "" : "s"}
-            </span>
-          ) : null}
-          {task.difficulty ? <span className="chip">{task.difficulty}</span> : null}
+  return createPortal(
+    <div
+      ref={ref}
+      className="fixed z-[100] w-[min(310px,calc(100vw-24px))] -translate-x-1/2 rounded-[4px] border border-ink/20 bg-paper shadow-[0_18px_44px_rgba(41,35,31,.22)]"
+      style={{
+        top: openUp ? anchor.top - 9 : anchor.bottom + 9,
+        left,
+        transform: openUp ? "translate(-50%, -100%)" : "translate(-50%, 0)",
+      }}
+      role="dialog"
+      aria-label={`${task.title} task controls`}
+    >
+      <div
+        className={`absolute left-1/2 h-2.5 w-2.5 -translate-x-1/2 rotate-45 border-ink/20 bg-paper ${
+          openUp ? "bottom-0 translate-y-1/2 border-b border-r" : "top-0 -translate-y-1/2 border-l border-t"
+        }`}
+      />
+      <div className="relative space-y-3 p-3.5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-bold leading-tight">{task.title}</p>
+            <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.09em] text-ink/40">
+              {when} · {minutesOf(task)} min{task.recipe_title ? ` · ${task.recipe_title}` : ""}
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="text-ink/35 transition hover:text-ink" aria-label="Close task controls">
+            <X size={14} />
+          </button>
         </div>
 
         {task.steps.length ? (
-          <ol className="space-y-3 border-t border-ink/10 pt-4">
+          <ol className="max-h-28 space-y-1.5 overflow-y-auto border-t border-ink/10 pt-2.5">
             {task.steps.map((step, index) => (
-              <li key={step.id} className="flex gap-3">
-                <span className="mt-0.5 font-editorial text-xl leading-none text-tomato">
-                  {String(index + 1).padStart(2, "0")}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-baseline gap-2">
-                    <p className="font-semibold">{step.title}</p>
-                    {step.duration_minutes ? (
-                      <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink/40">
-                        {step.duration_minutes} min
-                      </span>
-                    ) : null}
-                  </div>
-                  {step.description ? (
-                    <p className="mt-1 text-sm leading-relaxed text-ink/55">{step.description}</p>
-                  ) : null}
-                </div>
+              <li key={step.id} className="flex gap-2 text-[11px] leading-snug text-ink/65">
+                <span className="shrink-0 font-bold tabular-nums text-ink/30">{String(index + 1).padStart(2, "0")}</span>
+                <span className="min-w-0"><strong className="font-semibold text-ink">{step.title}</strong>{step.duration_minutes ? ` · ${step.duration_minutes}m` : ""}</span>
               </li>
             ))}
           </ol>
-        ) : (
-          <p className="text-sm leading-relaxed text-ink/60">
-            {task.description || "No steps in this task yet."}
-          </p>
-        )}
+        ) : task.description ? (
+          <p className="border-t border-ink/10 pt-2.5 text-xs leading-relaxed text-ink/55">{task.description}</p>
+        ) : null}
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label>
-            <span className="mb-2 block text-xs font-semibold">Assigned to</span>
+        <div className="grid grid-cols-[1fr_92px] gap-2 border-t border-ink/10 pt-3">
+          <label className="min-w-0">
+            <span className="mb-1 block text-[9px] font-bold uppercase tracking-[0.08em] text-ink/40">Helper</span>
             <select
-              className="field"
+              className="field !px-2 !py-1.5 text-xs"
               value={task.helper_id ?? ""}
               onChange={(event) => onAssign(event.target.value || null)}
             >
-              <option value="">No helper</option>
-              {lanes.map((lane) => (
-                <option key={lane.key} value={lane.helperId}>
-                  {lane.name}
-                </option>
-              ))}
+              {!task.start_at ? <option value="">Unassigned</option> : null}
+              {lanes.map((lane) => <option key={lane.helperId} value={lane.helperId}>{lane.name}</option>)}
             </select>
           </label>
           <label>
-            <span className="mb-2 block text-xs font-semibold">Duration (min)</span>
+            <span className="mb-1 block text-[9px] font-bold uppercase tracking-[0.08em] text-ink/40">Minutes</span>
             <input
-              key={task.id}
-              className="field"
+              key={`${task.id}:${task.duration_minutes}`}
+              className="field !px-2 !py-1.5 text-xs"
               type="number"
               min={5}
               step={5}
               defaultValue={minutesOf(task)}
               onBlur={(event) => {
                 const minutes = Number(event.target.value);
-                if (Number.isFinite(minutes) && minutes !== minutesOf(task)) onDuration(minutes);
+                if (Number.isFinite(minutes) && minutes >= 5 && minutes !== minutesOf(task)) onDuration(minutes);
               }}
             />
           </label>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 border-t border-ink/10 pt-4">
-          <TaskDoneToggle
-            taskId={task.id}
-            partyId={partyId}
-            done={task.status === "done"}
-            title={task.title}
-            placement="inline"
-          />
+        <div className="flex flex-wrap items-center gap-2 border-t border-ink/10 pt-2.5">
+          <TaskDoneToggle taskId={task.id} partyId={partyId} done={task.status === "done"} title={task.title} placement="inline" />
           <TaskLockToggle taskId={task.id} partyId={partyId} locked={task.locked} />
           {task.start_at ? (
-            <button type="button" className="chip hover:text-tomato" onClick={onUnschedule}>
-              <X size={13} /> Remove from timeline
+            <button type="button" className="chip hover:border-tomato/40 hover:text-tomato" onClick={onUnschedule}>
+              Remove from timeline
+            </button>
+          ) : task.helper_id ? (
+            <button type="button" className="chip hover:border-tomato/40 hover:text-tomato" onClick={onUnassign}>
+              Unassign
             </button>
           ) : null}
         </div>
       </div>
-    </Modal>
+    </div>,
+    document.body,
   );
 }
+

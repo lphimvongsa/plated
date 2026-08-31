@@ -36,6 +36,13 @@ type CostSummarySeed = {
     purchased: boolean;
   }>;
   menuItems?: Array<{ recipe_id: string; sort_order: number }>;
+  recipes?: Array<{
+    id: string;
+    title: string;
+    image_url: string | null;
+    estimated_cost: number | null;
+    servings: number;
+  }>;
 };
 
 /**
@@ -92,20 +99,18 @@ export async function getPartyCostSummary(
     .reduce((sum, item) => sum + (item.estimated_cost ?? 0), 0);
 
   const recipeIds = (menuItems ?? []).map((item) => item.recipe_id);
-  const { data: recipes } = recipeIds.length
-    ? await supabase
-        .from("recipes")
-        .select("id, title, image_url, estimated_cost, servings")
-        .in("id", recipeIds)
-    : { data: [] as Array<{
-        id: string;
-        title: string;
-        image_url: string | null;
-        estimated_cost: number | null;
-        servings: number;
-      }> };
+  const recipes = seed.recipes !== undefined
+    ? seed.recipes
+    : recipeIds.length
+      ? (
+          await supabase
+            .from("recipes")
+            .select("id, title, image_url, estimated_cost, servings")
+            .in("id", recipeIds)
+        ).data ?? []
+      : [];
 
-  const recipeById = new Map((recipes ?? []).map((recipe) => [recipe.id, recipe]));
+  const recipeById = new Map(recipes.map((recipe) => [recipe.id, recipe]));
   const dishes: PartyDishCost[] = (menuItems ?? [])
     .map((item) => {
       const recipe = recipeById.get(item.recipe_id);

@@ -39,7 +39,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="editorial-app min-h-screen bg-paper text-ink">
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[228px] border-r border-ink/15 bg-[#eee8dc] lg:flex lg:flex-col">
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[228px] border-r border-ink/15 bg-paper-2 lg:flex lg:flex-col">
         <div className="border-b border-ink/15 px-6 py-7">
           <Brand compact />
         </div>
@@ -59,8 +59,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                 href={href}
                 className={`group flex items-center gap-3 border-b border-ink/10 px-6 py-4 text-[11px] font-bold uppercase tracking-[0.12em] transition last:border-b-0 ${
                   active
-                    ? "border-l-[3px] border-l-tomato bg-[#f7f3eb] text-tomato"
-                    : "border-l-[3px] border-l-transparent text-ink/58 hover:bg-[#f7f3eb] hover:text-ink"
+                    ? "border-l-[3px] border-l-tomato bg-paper text-tomato"
+                    : "border-l-[3px] border-l-transparent text-ink/58 hover:border-l-tomato hover:bg-paper hover:text-tomato"
                 }`}
               >
                 <Icon size={16} strokeWidth={1.7} />
@@ -101,7 +101,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <main className="pb-[76px] lg:ml-[228px] lg:pb-0">{children}</main>
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-ink/20 bg-[#f7f3eb]/98 px-1 py-1.5 backdrop-blur lg:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-ink/20 bg-paper/98 px-1 py-1.5 backdrop-blur lg:hidden">
         {nav.map(({ href, label, icon: Icon, match }) => {
           const active = match(pathname);
           return (

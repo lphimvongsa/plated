@@ -7,6 +7,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   // Only routes that require authentication or auth-route redirects pay for
-  // Supabase's remote user validation/session refresh.
+  // Supabase session verification/refresh work.
   matcher: ["/app/:path*", "/onboarding/:path*", "/auth/:path*"],
 };

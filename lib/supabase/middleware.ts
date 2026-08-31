@@ -25,23 +25,24 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Verify the JWT locally (JWKS is cached) instead of making an Auth-server
+  // round-trip for every page navigation and every Next.js prefetch request.
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const userId = claimsData?.claims?.sub ? String(claimsData.claims.sub) : null;
 
   const path = request.nextUrl.pathname;
   const isProtected =
     path.startsWith("/app") || path.startsWith("/onboarding");
   const isAuthRoute = path.startsWith("/auth");
 
-  if (!user && isProtected) {
+  if (!userId && isProtected) {
     const url = request.nextUrl.clone();
     url.pathname = "/auth/login";
     url.searchParams.set("next", path);
     return NextResponse.redirect(url);
   }
 
-  if (user && isAuthRoute && path !== "/auth/callback") {
+  if (userId && isAuthRoute && path !== "/auth/callback") {
     const url = request.nextUrl.clone();
     url.pathname = "/app";
     return NextResponse.redirect(url);

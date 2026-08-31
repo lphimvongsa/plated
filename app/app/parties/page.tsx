@@ -2,6 +2,7 @@ import { PartyListItem } from "@/components/party/party-list-item";
 import { formatPartyWhen } from "@/lib/calendar";
 import type { Database } from "@/lib/database.types";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthenticatedUserId } from "@/lib/supabase/auth";
 import { Plus } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -12,12 +13,9 @@ const DAY_MS = 1000 * 60 * 60 * 24;
 
 export default async function PartiesPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const userId = await getAuthenticatedUserId();
 
-  if (!user) redirect("/auth/login");
-  const userId = user.id;
+  if (!userId) redirect("/auth/login");
 
   const { data: memberships } = await supabase
     .from("party_members")
@@ -68,6 +66,7 @@ export default async function PartiesPage() {
           name: party.name,
           location: party.location,
           hero_image: party.hero_image,
+          cover_crop: party.cover_crop,
         }}
         whenLabel={`${when.date} · ${when.time}`}
         attending={attending}

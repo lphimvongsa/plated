@@ -1,6 +1,7 @@
 import { InviteExperience } from "@/components/invite/invite-experience";
 import { loadInvite } from "@/lib/actions/invite";
 import { Brand } from "@/components/brand";
+import { siteUrl } from "@/lib/site";
 import Link from "next/link";
 
 export default async function InvitePage({ params }: { params: Promise<{ token: string }> }) {
@@ -22,5 +23,5 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
     );
   }
 
-  return <InviteExperience token={token} initial={invite} />;
+  return <InviteExperience token={token} initial={invite} origin={siteUrl()} />;
 }

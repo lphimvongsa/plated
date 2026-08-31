@@ -1,29 +1,22 @@
 "use client";
 
-import {
-  formatIngredientLine,
-  STEPS_PER_PAGE,
-  type BookPage,
-} from "@/lib/recipes/paginate-book";
-import { formatMinutes } from "@/lib/rsvp";
-import Link from "next/link";
+import { formatIngredientLine, type BookPage } from "@/lib/recipes/paginate-book";
+import { Maximize2 } from "lucide-react";
 import { forwardRef, type ReactNode } from "react";
 
 type PageShellProps = {
   children: ReactNode;
-  density?: "hard" | "soft";
   className?: string;
 };
 
 export const BookPageShell = forwardRef<HTMLDivElement, PageShellProps>(function BookPageShell(
-  { children, density = "soft", className = "" },
+  { children, className = "" },
   ref,
 ) {
   return (
     <div
       ref={ref}
-      data-density={density}
-      className={`book-page relative h-full w-full overflow-hidden bg-[#f7f2e8] text-ink shadow-[inset_0_0_0_1px_rgba(41,35,31,0.08)] ${className}`}
+      className={`book-page relative h-full w-full overflow-hidden bg-[#f7f2e8] text-ink shadow-[inset_0_0_0_1px_rgba(41,35,31,0.09)] ${className}`}
     >
       {children}
     </div>
@@ -32,243 +25,169 @@ export const BookPageShell = forwardRef<HTMLDivElement, PageShellProps>(function
 
 function PageNumber({ n }: { n: number }) {
   return (
-    <span className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 font-editorial text-[11px] text-ink/35">
+    <span className="pointer-events-none absolute bottom-2.5 left-1/2 -translate-x-1/2 font-editorial text-[9px] text-ink/35">
       {n}
     </span>
   );
 }
 
-export const CoverPage = forwardRef<HTMLDivElement, { recipeCount: number; pageNumber: number }>(
-  function CoverPage({ recipeCount, pageNumber }, ref) {
-    return (
-      <BookPageShell ref={ref} density="hard" className="bg-[#2b241f] text-paper">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_30%_20%,rgba(200,68,50,0.35),transparent_55%),linear-gradient(160deg,#3a2f28,#1f1a16)]" />
-        <div className="relative flex h-full flex-col justify-between p-7 md:p-9">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-paper/55">Plated</p>
-            <h2 className="mt-4 font-editorial text-4xl font-semibold leading-[0.95] md:text-5xl">
-              Your
-              <br />
-              cookbook
-            </h2>
-          </div>
-          <div>
-            <p className="font-handwritten text-2xl text-blush">Recipes worth inviting people over for.</p>
-            <p className="mt-4 text-[11px] font-bold uppercase tracking-[0.14em] text-paper/45">
-              {recipeCount === 0
-                ? "No recipes yet"
-                : `${recipeCount} recipe${recipeCount === 1 ? "" : "s"}`}
-            </p>
-          </div>
-        </div>
-        <PageNumber n={pageNumber} />
-      </BookPageShell>
-    );
-  },
-);
+function WholeButton({ recipeId, onOpenWhole }: { recipeId: string; onOpenWhole?: (recipeId: string) => void }) {
+  if (!onOpenWhole) return null;
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpenWhole(recipeId);
+      }}
+      className="absolute bottom-3 right-3 z-10 inline-flex items-center gap-1 rounded-full border border-current/25 bg-paper/80 px-2.5 py-1 text-[8px] font-bold uppercase tracking-[0.1em] text-ink/65 backdrop-blur transition hover:-translate-y-0.5 hover:bg-paper hover:text-ink"
+    >
+      <Maximize2 size={10} /> Whole recipe
+    </button>
+  );
+}
 
-export const TocPage = forwardRef<
+export const RecipeCoverPage = forwardRef<
   HTMLDivElement,
   {
-    entries: { title: string; pageIndex: number; course: string | null }[];
-    part: number;
-    parts: number;
+    page: Extract<BookPage, { kind: "recipe-cover" }>;
     pageNumber: number;
-    onJump?: (pageIndex: number) => void;
+    onOpenWhole?: (recipeId: string) => void;
   }
->(function TocPage({ entries, part, parts, pageNumber, onJump }, ref) {
-  return (
-    <BookPageShell ref={ref}>
-      <div className="flex h-full flex-col p-6 md:p-8">
-        <p className="eyebrow">Contents</p>
-        <h2 className="mt-2 font-editorial text-3xl font-semibold">
-          Table of recipes
-          {parts > 1 ? (
-            <span className="ml-2 text-base font-normal text-ink/40">
-              {part}/{parts}
-            </span>
-          ) : null}
-        </h2>
-        {entries.length === 0 ? (
-          <div className="mt-8 flex flex-1 flex-col justify-center">
-            <p className="font-editorial text-2xl font-semibold">This book is waiting for its first recipe.</p>
-            <p className="mt-3 text-sm text-ink/50">Import or write one, then flip through it here.</p>
-            <Link href="/app/recipes/new" className="btn-primary mt-6 w-fit">
-              Add recipe
-            </Link>
-          </div>
-        ) : (
-          <ol className="mt-6 flex-1 space-y-2.5 overflow-hidden">
-            {entries.map((entry) => (
-              <li key={`${entry.title}-${entry.pageIndex}`}>
-                <button
-                  type="button"
-                  className="flex w-full items-baseline gap-2 text-left text-sm transition hover:text-tomato"
-                  onClick={() => onJump?.(entry.pageIndex)}
-                >
-                  <span className="min-w-0 flex-1 truncate font-editorial text-lg font-semibold leading-tight">
-                    {entry.title}
-                  </span>
-                  <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.12em] text-ink/35">
-                    {entry.course || "Recipe"}
-                  </span>
-                  <span className="shrink-0 font-editorial text-ink/40">{entry.pageIndex + 1}</span>
-                </button>
-              </li>
-            ))}
-          </ol>
-        )}
-      </div>
-      <PageNumber n={pageNumber} />
-    </BookPageShell>
-  );
-});
-
-export const RecipeHeroPage = forwardRef<
-  HTMLDivElement,
-  { page: Extract<BookPage, { kind: "recipe-hero" }>; pageNumber: number }
->(function RecipeHeroPage({ page, pageNumber }, ref) {
+>(function RecipeCoverPage({ page, pageNumber, onOpenWhole }, ref) {
   const { recipe } = page;
+  const textColor = recipe.cover_text_color || "#ffffff";
   return (
-    <BookPageShell ref={ref}>
-      <div className="flex h-full flex-col">
-        <div className="relative h-[46%] min-h-[140px] overflow-hidden bg-ink">
-          <img
-            src={recipe.image_url || "/photos/party-04.webp"}
-            alt=""
-            className="h-full w-full object-cover"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-ink/55 via-transparent to-transparent" />
-          {recipe.import_status === "incomplete" ? (
-            <span className="absolute left-3 top-3 chip border-orange/30 bg-orange/90 text-paper">Draft</span>
-          ) : null}
-        </div>
-        <div className="flex flex-1 flex-col p-5 md:p-7">
-          <p className="eyebrow">{recipe.course || "Recipe"}</p>
-          <h2 className="mt-2 font-editorial text-3xl font-semibold leading-[1.05] md:text-4xl">
-            {recipe.title}
-          </h2>
-          <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink/45">
-            {recipe.cuisine ? <span>{recipe.cuisine}</span> : null}
-            <span>
-              {formatMinutes(recipe.prep_minutes)} prep · {formatMinutes(recipe.cook_minutes)} cook
-            </span>
-            {recipe.servings != null ? <span>Serves {recipe.servings}</span> : null}
-            {recipe.difficulty ? <span>{recipe.difficulty}</span> : null}
-          </div>
-          {recipe.description ? (
-            <p className="mt-4 line-clamp-5 text-sm leading-relaxed text-ink/65">{recipe.description}</p>
-          ) : (
-            <p className="mt-4 font-handwritten text-xl text-ink/45">Turn the page for the recipe.</p>
-          )}
-          <div className="mt-auto pt-4">
-            <Link href={`/app/recipes/${recipe.id}`} className="editorial-link text-tomato">
-              Edit recipe
-            </Link>
-          </div>
-        </div>
+    <BookPageShell ref={ref} className="bg-ink">
+      <img
+        src={recipe.image_url || "/photos/party-04.webp"}
+        alt=""
+        className="absolute inset-0 h-full w-full object-cover"
+      />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/5 to-black/15" />
+      <div className="absolute inset-x-[8%] bottom-[9%]" style={{ color: textColor }}>
+        {recipe.course ? (
+          <p className="mb-2 text-[8px] font-bold uppercase tracking-[0.2em] opacity-80">{recipe.course}</p>
+        ) : null}
+        <h2 className="max-w-[90%] font-editorial text-[clamp(2rem,4.1vw,4.2rem)] font-semibold leading-[0.9] drop-shadow-sm">
+          {recipe.title}
+        </h2>
       </div>
-      <PageNumber n={pageNumber} />
+      <span className="absolute bottom-2.5 left-4 text-[9px] font-semibold text-white/65">{pageNumber}</span>
+      <WholeButton recipeId={recipe.id} onOpenWhole={onOpenWhole} />
     </BookPageShell>
   );
 });
 
-export const RecipeBodyPage = forwardRef<
+export const RecipeEditorialPage = forwardRef<
   HTMLDivElement,
-  { page: Extract<BookPage, { kind: "recipe-body" }>; pageNumber: number }
->(function RecipeBodyPage({ page, pageNumber }, ref) {
-  const { recipe, ingredients, stepLines, part, parts } = page;
+  {
+    page: Extract<BookPage, { kind: "recipe-main" }>;
+    pageNumber: number;
+    onOpenWhole?: (recipeId: string) => void;
+  }
+>(function RecipeEditorialPage({ page, pageNumber, onOpenWhole }, ref) {
+  const { recipe } = page;
+  const ingredients = [...recipe.ingredients].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  const totalTime = (recipe.prep_minutes ?? 0) + (recipe.cook_minutes ?? 0);
+
   return (
     <BookPageShell ref={ref}>
-      <div className="flex h-full flex-col p-5 md:p-7">
-        <div className="flex items-baseline justify-between gap-3">
-          <div className="min-w-0">
-            <p className="eyebrow truncate">{recipe.title}</p>
-            <h2 className="mt-1 font-editorial text-2xl font-semibold">
-              {ingredients.length > 0 && stepLines.length === 0
-                ? "Ingredients"
-                : ingredients.length === 0 && stepLines.length > 0
-                  ? "Method"
-                  : "Recipe"}
-            </h2>
-          </div>
-          {parts > 1 ? (
-            <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.12em] text-ink/35">
-              {part}/{parts}
-            </span>
-          ) : null}
+      <div className="flex h-full flex-col px-[7%] pb-[7%] pt-[6%]">
+        <div className="border-b border-ink/15 pb-[3%] text-center">
+          <p className="text-[7px] font-bold uppercase tracking-[0.2em] text-ink/45">{recipe.cuisine || recipe.course || "Plated recipe"}</p>
+          <h2 className="mx-auto mt-1 max-w-[85%] font-editorial text-[clamp(1.3rem,2.2vw,2.35rem)] font-semibold leading-[1.02]">{recipe.title}</h2>
         </div>
 
-        <div className="mt-4 grid flex-1 gap-5 overflow-hidden">
-          {ingredients.length > 0 ? (
-            <div>
-              {stepLines.length > 0 ? (
-                <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-ink/40">
-                  Ingredients
-                </p>
-              ) : null}
-              <ul className="space-y-1.5 text-[13px] leading-snug text-ink/80">
-                {ingredients.map((ingredient, index) => (
-                  <li key={`${ingredient.name}-${index}`} className="flex gap-2">
-                    <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-tomato/70" />
-                    <span>{formatIngredientLine(ingredient)}</span>
-                  </li>
-                ))}
-              </ul>
+        <div className="mt-[4%] grid min-h-0 flex-1 grid-cols-[0.78fr_1.48fr] gap-[6%] overflow-hidden">
+          <aside className="min-h-0 border-r border-ink/10 pr-[8%] text-[clamp(6px,0.65vw,10px)] leading-[1.35]">
+            <div className="grid grid-cols-2 gap-x-2 gap-y-3 border-b border-ink/10 pb-3">
+              <div>
+                <p className="text-[0.72em] font-bold uppercase tracking-[0.14em] text-ink/45">Serves</p>
+                <p className="mt-0.5 font-editorial text-[1.12em]">{recipe.servings ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-[0.72em] font-bold uppercase tracking-[0.14em] text-ink/45">Time</p>
+                <p className="mt-0.5 font-editorial text-[1.12em]">{totalTime ? `${totalTime} min` : "—"}</p>
+              </div>
             </div>
-          ) : null}
+            <p className="mt-3 text-[0.75em] font-bold uppercase tracking-[0.14em]">Ingredients</p>
+            <ul className="mt-1.5 space-y-[0.28em] font-editorial">
+              {ingredients.length ? ingredients.map((ingredient, index) => (
+                <li key={`${ingredient.name}-${index}`}>{formatIngredientLine(ingredient)}</li>
+              )) : <li className="text-ink/40">No ingredients yet.</li>}
+            </ul>
+          </aside>
 
-          {stepLines.length > 0 ? (
-            <div>
-              {ingredients.length > 0 ? (
-                <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-ink/40">
-                  Method
-                </p>
-              ) : null}
-              <ol className="space-y-2 text-[13px] leading-snug text-ink/80">
-                {stepLines.map((line, index) => (
-                  <li key={`${index}-${line.slice(0, 24)}`} className="flex gap-2.5">
-                    <span className="font-editorial text-base font-semibold text-tomato/80">
-                      {(part - 1) * STEPS_PER_PAGE + index + 1}
-                    </span>
-                    <span>{line}</span>
+          <main className="min-h-0 overflow-hidden text-[clamp(6px,0.67vw,10.5px)] leading-[1.48]">
+            {recipe.description?.trim() ? (
+              <p className="font-editorial text-[1.05em] leading-[1.5] text-ink/75">{recipe.description}</p>
+            ) : null}
+            <p className="mt-3 text-[0.76em] font-bold uppercase tracking-[0.16em]">Method</p>
+            {page.stepLines.length ? (
+              <ol className="mt-1.5 space-y-[0.7em] font-editorial">
+                {page.stepLines.map((line, index) => (
+                  <li key={`${page.stepOffset + index}-${line.slice(0, 18)}`}>
+                    <span className="mr-1.5 font-sans text-[0.72em] font-bold text-ink/45">{page.stepOffset + index + 1}.</span>
+                    {line}
                   </li>
                 ))}
               </ol>
-            </div>
-          ) : null}
-
-          {ingredients.length === 0 && stepLines.length === 0 ? (
-            <div className="flex flex-1 flex-col justify-center">
-              <p className="font-editorial text-2xl font-semibold">No ingredients or steps yet.</p>
-              <Link href={`/app/recipes/${recipe.id}`} className="editorial-link mt-4 w-fit text-tomato">
-                Finish this recipe
-              </Link>
-            </div>
-          ) : null}
+            ) : (
+              <p className="mt-2 font-editorial text-ink/45">No method has been added yet.</p>
+            )}
+            {page.continuationCount ? (
+              <p className="mt-3 border-t border-ink/10 pt-2 text-[0.72em] font-bold uppercase tracking-[0.12em] text-ink/35">
+                Method continues →
+              </p>
+            ) : null}
+          </main>
         </div>
-
-        {recipe.notes && part === parts ? (
-          <p className="mt-3 line-clamp-3 border-t border-ink/10 pt-3 text-xs italic text-ink/50">
-            {recipe.notes}
-          </p>
-        ) : null}
       </div>
       <PageNumber n={pageNumber} />
+      <WholeButton recipeId={recipe.id} onOpenWhole={onOpenWhole} />
     </BookPageShell>
   );
 });
 
-export const BlankPage = forwardRef<HTMLDivElement, { pageNumber: number }>(function BlankPage(
-  { pageNumber },
-  ref,
-) {
+export const RecipeContinuationPage = forwardRef<
+  HTMLDivElement,
+  {
+    page: Extract<BookPage, { kind: "recipe-continuation" }>;
+    pageNumber: number;
+    onOpenWhole?: (recipeId: string) => void;
+  }
+>(function RecipeContinuationPage({ page, pageNumber, onOpenWhole }, ref) {
   return (
-    <BookPageShell ref={ref} density="hard">
-      <div className="flex h-full items-center justify-center p-8">
-        <p className="font-handwritten text-2xl text-ink/25">The end — for now.</p>
+    <BookPageShell ref={ref}>
+      <div className="flex h-full flex-col px-[10%] pb-[8%] pt-[8%]">
+        <div className="border-b border-ink/15 pb-3">
+          <p className="text-[7px] font-bold uppercase tracking-[0.2em] text-ink/45">Method · continued</p>
+          <h2 className="mt-1 font-editorial text-[clamp(1.15rem,1.8vw,1.9rem)] font-semibold">{page.recipe.title}</h2>
+        </div>
+        <ol className="mt-[6%] space-y-[1.15em] overflow-hidden font-editorial text-[clamp(7px,0.78vw,12px)] leading-[1.55]">
+          {page.stepLines.map((line, index) => (
+            <li key={`${page.stepOffset + index}-${line.slice(0, 18)}`} className="grid grid-cols-[1.6em_1fr] gap-2">
+              <span className="font-sans text-[0.72em] font-bold text-ink/40">{page.stepOffset + index + 1}.</span>
+              <span>{line}</span>
+            </li>
+          ))}
+        </ol>
+        <p className="mt-auto pt-4 text-[7px] font-bold uppercase tracking-[0.16em] text-ink/35">
+          {page.part} / {page.parts} continuation
+        </p>
       </div>
       <PageNumber n={pageNumber} />
+      <WholeButton recipeId={page.recipe.id} onOpenWhole={onOpenWhole} />
+    </BookPageShell>
+  );
+});
+
+export const BlankPage = forwardRef<HTMLDivElement, { pageNumber?: number }>(function BlankPage({ pageNumber }, ref) {
+  return (
+    <BookPageShell ref={ref} className="bg-[#f5efe4]">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,.65),transparent_45%)]" />
+      {pageNumber ? <PageNumber n={pageNumber} /> : null}
     </BookPageShell>
   );
 });

@@ -2,13 +2,18 @@
 
 import {
   BlankPage,
-  CoverPage,
-  RecipeBodyPage,
-  RecipeHeroPage,
-  TocPage,
+  RecipeContinuationPage,
+  RecipeCoverPage,
+  RecipeEditorialPage,
 } from "@/components/recipe/book-pages";
-import { paginateCookbook, type BookRecipe } from "@/lib/recipes/paginate-book";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  paginateCookbook,
+  recipePageIndicesMap,
+  recipeStartPageMap,
+  type BookPage,
+  type BookRecipe,
+} from "@/lib/recipes/paginate-book";
+import { ChevronLeft, ChevronRight, Clock3, Search, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import {
   useCallback,
@@ -21,23 +26,14 @@ import {
   type RefAttributes,
 } from "react";
 
-const HTMLFlipBook = dynamic(() => import("react-pageflip"), {
-  ssr: false,
-  loading: () => (
-    <div className="grid min-h-[420px] place-items-center rounded-[3px] border border-ink/10 bg-[#f8f4ec]">
-      <p className="text-sm text-ink/45">Opening your cookbook…</p>
-    </div>
-  ),
-});
+const HTMLFlipBook = dynamic(() => import("react-pageflip"), { ssr: false });
 
 type FlipApi = {
   pageFlip: () => {
     flipNext: (corner?: "top" | "bottom") => void;
     flipPrev: (corner?: "top" | "bottom") => void;
-    flip: (page: number, corner?: "top" | "bottom") => void;
     turnToPage: (page: number) => void;
     getCurrentPageIndex: () => number;
-    getPageCount: () => number;
   };
 };
 
@@ -74,197 +70,337 @@ const FlipBook = HTMLFlipBook as unknown as ForwardRefExoticComponent<
   FlipBookComponentProps & RefAttributes<FlipApi>
 >;
 
-function usePrefersReducedMotion() {
-  const [reduced, setReduced] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const update = () => setReduced(mq.matches);
-    update();
-    mq.addEventListener("change", update);
-    return () => mq.removeEventListener("change", update);
-  }, []);
-  return reduced;
+const PAGE_STORAGE_KEY = "plated.cookbook.currentPage.v2";
+const FLIP_MS = 300;
+
+function renderPage(
+  page: BookPage,
+  index: number,
+  onOpenWhole?: (recipeId: string) => void,
+  keyPrefix = "book",
+) {
+  const key = `${keyPrefix}-${index}-${page.kind}`;
+  if (page.kind === "recipe-cover") {
+    return <RecipeCoverPage key={key} page={page} pageNumber={index + 1} onOpenWhole={onOpenWhole} />;
+  }
+  if (page.kind === "recipe-main") {
+    return <RecipeEditorialPage key={key} page={page} pageNumber={index + 1} onOpenWhole={onOpenWhole} />;
+  }
+  if (page.kind === "recipe-continuation") {
+    return <RecipeContinuationPage key={key} page={page} pageNumber={index + 1} onOpenWhole={onOpenWhole} />;
+  }
+  return <BlankPage key={key} pageNumber={index + 1} />;
 }
 
 export function CookbookBook({ recipes }: { recipes: BookRecipe[] }) {
   const pages = useMemo(() => paginateCookbook(recipes), [recipes]);
+  const recipeStarts = useMemo(() => recipeStartPageMap(pages), [pages]);
+  const recipePageIndices = useMemo(() => recipePageIndicesMap(pages), [pages]);
   const bookRef = useRef<FlipApi | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const journeyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const journeyTargetRef = useRef<number | null>(null);
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
   const [pageIndex, setPageIndex] = useState(0);
-  const [dims, setDims] = useState({ width: 360, height: 500 });
-  const [ready, setReady] = useState(false);
-  const reducedMotion = usePrefersReducedMotion();
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [wholeRecipeId, setWholeRecipeId] = useState<string | null>(null);
+  const restoredRef = useRef(false);
 
   useEffect(() => {
-    const el = stageRef.current;
-    if (!el) return;
-
+    const node = stageRef.current;
+    if (!node) return;
     const measure = () => {
-      const cw = el.clientWidth;
-      const availableHeight = Math.max(360, Math.min(window.innerHeight - 210, 640));
-      const narrow = cw < 700;
-      const pageWidth = narrow
-        ? Math.max(260, Math.min(cw - 16, 380))
-        : Math.max(280, Math.min(Math.floor((cw - 40) / 2), 420));
-      const pageHeight = Math.min(Math.round(pageWidth * 1.38), availableHeight);
-      setDims({ width: pageWidth, height: pageHeight });
-      setReady(true);
+      const rect = node.getBoundingClientRect();
+      const availableWidth = Math.max(360, rect.width - 96);
+      const availableHeight = Math.max(360, rect.height - 42);
+      const byWidth = Math.floor(availableWidth / 2);
+      const pageWidth = Math.max(170, Math.min(560, byWidth, Math.floor(availableHeight * 0.74)));
+      const pageHeight = Math.max(300, Math.min(760, availableHeight, Math.floor(pageWidth / 0.74)));
+      setSize((prev) => {
+        if (prev && prev.width === pageWidth && prev.height === pageHeight) return prev;
+        return { width: pageWidth, height: pageHeight };
+      });
     };
-
     measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    window.addEventListener("resize", measure);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", measure);
-    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
   }, []);
 
-  const pageCount = pages.length;
-  const displayPage = Math.min(pageIndex + 1, pageCount);
+  useEffect(() => () => {
+    if (journeyTimerRef.current) clearTimeout(journeyTimerRef.current);
+  }, []);
 
-  const goTo = useCallback(
-    (index: number, animate: boolean) => {
-      const api = bookRef.current?.pageFlip?.();
-      if (!api) return;
-      const clamped = Math.max(0, Math.min(index, pageCount - 1));
-      if (!animate || reducedMotion) api.turnToPage(clamped);
-      else api.flip(clamped, "top");
-    },
-    [pageCount, reducedMotion],
-  );
+  const stopJourney = useCallback(() => {
+    if (journeyTimerRef.current) clearTimeout(journeyTimerRef.current);
+    journeyTimerRef.current = null;
+    journeyTargetRef.current = null;
+  }, []);
+
+  const runJourneyStep = useCallback(function step() {
+    const api = bookRef.current?.pageFlip?.();
+    const target = journeyTargetRef.current;
+    if (!api || target == null) return;
+    const current = api.getCurrentPageIndex();
+    if (current === target || Math.abs(current - target) <= 1) {
+      api.turnToPage(target);
+      setPageIndex(target);
+      stopJourney();
+      return;
+    }
+    if (target > current) api.flipNext("top");
+    else api.flipPrev("top");
+    journeyTimerRef.current = setTimeout(step, FLIP_MS + 55);
+  }, [stopJourney]);
+
+  const travelTo = useCallback((index: number) => {
+    const clamped = Math.max(0, Math.min(index, pages.length - 1));
+    stopJourney();
+    journeyTargetRef.current = clamped % 2 === 0 ? clamped : clamped - 1;
+    runJourneyStep();
+  }, [pages.length, runJourneyStep, stopJourney]);
 
   const flipNext = useCallback(() => {
-    const api = bookRef.current?.pageFlip?.();
-    if (!api) return;
-    if (reducedMotion) api.turnToPage(Math.min(api.getCurrentPageIndex() + 1, pageCount - 1));
-    else api.flipNext("top");
-  }, [pageCount, reducedMotion]);
+    stopJourney();
+    bookRef.current?.pageFlip?.().flipNext("top");
+  }, [stopJourney]);
 
   const flipPrev = useCallback(() => {
-    const api = bookRef.current?.pageFlip?.();
-    if (!api) return;
-    if (reducedMotion) api.turnToPage(Math.max(api.getCurrentPageIndex() - 1, 0));
-    else api.flipPrev("top");
-  }, [reducedMotion]);
+    stopJourney();
+    bookRef.current?.pageFlip?.().flipPrev("top");
+  }, [stopJourney]);
+
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false);
+    setQuery("");
+    searchInputRef.current?.blur();
+  }, []);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (event.key === "ArrowRight") {
-        event.preventDefault();
-        flipNext();
-      } else if (event.key === "ArrowLeft") {
-        event.preventDefault();
-        flipPrev();
+      if (event.key === "Escape") {
+        if (wholeRecipeId) {
+          setWholeRecipeId(null);
+          return;
+        }
+        if (searchOpen) {
+          closeSearch();
+          return;
+        }
       }
+      if (searchOpen || wholeRecipeId) return;
+      if (event.key === "ArrowRight") flipNext();
+      if (event.key === "ArrowLeft") flipPrev();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [flipNext, flipPrev]);
+  }, [closeSearch, flipNext, flipPrev, searchOpen, wholeRecipeId]);
+
+  const filteredRecipes = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return recipes.filter((recipe) => !needle || recipe.title.toLowerCase().includes(needle));
+  }, [query, recipes]);
+
+  const fanPages = useMemo(() => {
+    if (!wholeRecipeId) return [] as { page: BookPage; index: number }[];
+    return (recipePageIndices.get(wholeRecipeId) ?? [])
+      .map((index) => ({ page: pages[index], index }))
+      .filter(({ page }) => page.kind !== "blank");
+  }, [wholeRecipeId, recipePageIndices, pages]);
+
+  function selectSearchRecipe(recipe: BookRecipe) {
+    const target = recipeStarts.get(recipe.id);
+    if (target == null) return;
+    closeSearch();
+    window.setTimeout(() => travelTo(target), 160);
+  }
 
   return (
-    <section className="relative">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="eyebrow">Open book</p>
-          <p className="mt-1 text-sm text-ink/50">
-            Drag a corner, tap the edges, or use the arrows. Prefer cards? Switch in Settings.
-          </p>
+    <section ref={stageRef} className="relative h-full min-h-0 w-full overflow-hidden bg-[#ebe4d8]">
+      <div className="absolute left-1/2 top-3 z-50 w-[min(520px,58vw)] -translate-x-1/2">
+        <div className="relative">
+          <Search size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink/35" />
+          <input
+            ref={searchInputRef}
+            value={query}
+            onFocus={() => {
+              setWholeRecipeId(null);
+              setSearchOpen(true);
+            }}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setWholeRecipeId(null);
+              setSearchOpen(true);
+            }}
+            placeholder="Search recipes"
+            className="h-10 w-full rounded-full border border-ink/15 bg-paper/95 pl-10 pr-10 text-sm shadow-card outline-none backdrop-blur transition focus:border-ink/30"
+          />
+          {searchOpen ? (
+            <button
+              type="button"
+              aria-label="Close recipe search"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={closeSearch}
+              className="absolute right-2 top-1/2 z-10 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full text-ink/40 hover:bg-ink/5 hover:text-ink"
+            >
+              <X size={14} />
+            </button>
+          ) : null}
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="btn-icon"
-            aria-label="Previous page"
-            onClick={flipPrev}
-            disabled={pageIndex <= 0}
+      </div>
+
+      <button
+        type="button"
+        onClick={flipPrev}
+        aria-label="Previous cookbook pages"
+        className="absolute left-3 top-1/2 z-20 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full border border-ink/15 bg-paper/90 shadow-card transition hover:-translate-y-[55%] hover:bg-paper"
+      >
+        <ChevronLeft size={21} />
+      </button>
+      <button
+        type="button"
+        onClick={flipNext}
+        aria-label="Next cookbook pages"
+        className="absolute right-3 top-1/2 z-20 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full border border-ink/15 bg-paper/90 shadow-card transition hover:-translate-y-[55%] hover:bg-paper"
+      >
+        <ChevronRight size={21} />
+      </button>
+
+      <div className="absolute inset-0 flex items-center justify-center pt-7">
+        {size ? (
+          <div
+            className={`relative transition-opacity duration-300 ${searchOpen || wholeRecipeId ? "opacity-20" : "opacity-100"}`}
+            style={{ width: size.width * 2, height: size.height }}
           >
-            <ChevronLeft size={18} />
-          </button>
-          <span className="min-w-[5.5rem] text-center font-editorial text-lg tabular-nums text-ink/70">
-            {displayPage} / {pageCount}
-          </span>
-          <button
-            type="button"
-            className="btn-icon"
-            aria-label="Next page"
-            onClick={flipNext}
-            disabled={pageIndex >= pageCount - 1}
-          >
-            <ChevronRight size={18} />
-          </button>
-        </div>
+            <div className="pointer-events-none absolute -inset-x-3 bottom-[-12px] top-[16px] rounded-[8px] bg-[#5b3029] shadow-[0_28px_55px_rgba(41,35,31,.24)]" />
+            <div className="pointer-events-none absolute left-1/2 top-0 z-[2] h-full w-[12px] -translate-x-1/2 bg-gradient-to-r from-black/10 via-white/25 to-black/10" />
+            <FlipBook
+              key={`${size.width}x${size.height}`}
+              ref={bookRef}
+              className="cookbook-flipbook"
+              width={size.width}
+              height={size.height}
+              size="fixed"
+              minWidth={size.width}
+              maxWidth={size.width}
+              minHeight={size.height}
+              maxHeight={size.height}
+              drawShadow
+              flippingTime={FLIP_MS}
+              usePortrait={false}
+              autoSize={false}
+              maxShadowOpacity={0.28}
+              showCover={false}
+              mobileScrollSupport={false}
+              clickEventForward
+              useMouseEvents
+              swipeDistance={20}
+              showPageCorners
+              disableFlipByClick={false}
+              startPage={pageIndex % 2 === 0 ? pageIndex : Math.max(0, pageIndex - 1)}
+              onInit={(event) => {
+                const initial = event.data.page ?? 0;
+                setPageIndex(initial);
+                if (restoredRef.current) return;
+                restoredRef.current = true;
+                const stored = Number(window.localStorage.getItem(PAGE_STORAGE_KEY));
+                if (!Number.isFinite(stored)) return;
+                const target = Math.max(0, Math.min(Math.round(stored), pages.length - 1));
+                bookRef.current?.pageFlip?.().turnToPage(target % 2 === 0 ? target : target - 1);
+              }}
+              onFlip={(event) => {
+                setPageIndex(event.data);
+                window.localStorage.setItem(PAGE_STORAGE_KEY, String(event.data));
+              }}
+            >
+              {pages.map((page, index) => renderPage(page, index, (recipeId) => setWholeRecipeId(recipeId)))}
+            </FlipBook>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="absolute bottom-2 left-1/2 z-20 -translate-x-1/2 rounded-full bg-paper/80 px-3 py-1 text-[9px] font-bold uppercase tracking-[0.13em] text-ink/40 backdrop-blur">
+        {Math.floor(pageIndex / 2) + 1} / {Math.max(1, Math.ceil(pages.length / 2))}
       </div>
 
       <div
-        ref={stageRef}
-        className="relative mx-auto flex min-h-[420px] w-full max-w-5xl items-center justify-center rounded-[3px] bg-[radial-gradient(ellipse_at_center,rgba(41,35,31,0.08),transparent_65%)] py-4"
+        className={`absolute inset-3 z-[25] flex flex-col overflow-hidden border border-ink/15 bg-paper/[0.97] shadow-[0_24px_70px_rgba(41,35,31,0.22)] backdrop-blur-sm transition-all duration-300 ease-[cubic-bezier(.2,.75,.25,1)] md:inset-5 ${
+          searchOpen ? "pointer-events-auto translate-y-0 scale-100 opacity-100" : "pointer-events-none translate-y-3 scale-[0.985] opacity-0"
+        }`}
+        aria-hidden={!searchOpen}
       >
-        {ready ? (
-          <FlipBook
-            key={`${dims.width}x${dims.height}-${pageCount}`}
-            ref={bookRef}
-            className="cookbook-flipbook"
-            style={{ margin: "0 auto" }}
-            width={dims.width}
-            height={dims.height}
-            size="fixed"
-            minWidth={240}
-            maxWidth={480}
-            minHeight={320}
-            maxHeight={680}
-            showCover
-            drawShadow
-            maxShadowOpacity={0.45}
-            flippingTime={reducedMotion ? 0 : 850}
-            usePortrait
-            autoSize
-            mobileScrollSupport
-            clickEventForward
-            useMouseEvents
-            showPageCorners
-            startPage={0}
-            startZIndex={1}
-            swipeDistance={30}
-            disableFlipByClick={false}
-            onInit={(event) => setPageIndex(event.data.page)}
-            onFlip={(event) => setPageIndex(event.data)}
-          >
-            {pages.map((page, index) => {
-              const pageNumber = index + 1;
-              if (page.kind === "cover") {
-                return <CoverPage key={`cover-${index}`} recipeCount={page.recipeCount} pageNumber={pageNumber} />;
-              }
-              if (page.kind === "toc") {
-                return (
-                  <TocPage
-                    key={`toc-${index}`}
-                    entries={page.entries}
-                    part={page.part}
-                    parts={page.parts}
-                    pageNumber={pageNumber}
-                    onJump={(target) => goTo(target, !reducedMotion)}
-                  />
-                );
-              }
-              if (page.kind === "recipe-hero") {
-                return <RecipeHeroPage key={`hero-${page.recipe.id}`} page={page} pageNumber={pageNumber} />;
-              }
-              if (page.kind === "recipe-body") {
-                return (
-                  <RecipeBodyPage
-                    key={`body-${page.recipe.id}-${page.part}`}
-                    page={page}
-                    pageNumber={pageNumber}
-                  />
-                );
-              }
-              return <BlankPage key={`blank-${index}`} pageNumber={pageNumber} />;
-            })}
-          </FlipBook>
-        ) : null}
+        <div className="flex items-end justify-between gap-4 border-b border-ink/10 px-5 pb-4 pt-14 md:px-7">
+          <div>
+            <p className="eyebrow">Recipe index</p>
+            <p className="mt-1 font-editorial text-3xl font-semibold">{query ? `Results for “${query}”` : "Find a recipe"}</p>
+          </div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-ink/35">{filteredRecipes.length} shown</p>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
+          {filteredRecipes.length ? (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {filteredRecipes.map((recipe) => (
+                <button
+                  key={recipe.id}
+                  type="button"
+                  onClick={() => selectSearchRecipe(recipe)}
+                  className="group overflow-hidden border border-ink/12 bg-paper-2 text-left transition duration-200 hover:-translate-y-1 hover:border-tomato/45 hover:shadow-[0_12px_26px_rgba(41,35,31,0.12)]"
+                >
+                  <div className="h-32 overflow-hidden bg-ink/10">
+                    <img src={recipe.image_url || "/photos/party-04.webp"} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]" />
+                  </div>
+                  <div className="p-4">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-tomato">{recipe.course || "Recipe"}</p>
+                    <p className="mt-1 line-clamp-2 font-editorial text-xl font-semibold leading-tight">{recipe.title}</p>
+                    <p className="mt-3 flex items-center gap-1.5 text-[10px] font-semibold text-ink/40"><Clock3 size={12}/>{(recipe.prep_minutes ?? 0) + (recipe.cook_minutes ?? 0)} min</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="grid h-full min-h-64 place-items-center text-center"><div><p className="font-editorial text-3xl font-semibold">No matching recipe.</p><p className="mt-2 text-sm text-ink/45">Try a different recipe name.</p></div></div>
+          )}
+        </div>
       </div>
+
+      {size && wholeRecipeId && fanPages.length ? (
+        <div className="absolute inset-0 z-40">
+          <div className="absolute left-5 top-4 z-30 rounded-full border border-ink/12 bg-paper/92 px-3 py-1.5 shadow-card backdrop-blur">
+            <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-ink/45">Whole recipe · scroll sideways</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setWholeRecipeId(null)}
+            className="absolute right-5 top-4 z-30 grid h-9 w-9 place-items-center rounded-full border border-ink/15 bg-paper/95 shadow-card transition hover:-translate-y-0.5 hover:border-tomato hover:text-tomato"
+            aria-label="Close whole recipe"
+          >
+            <X size={16}/>
+          </button>
+          <div className="h-full overflow-x-auto overflow-y-hidden px-8 [scrollbar-width:thin]">
+            <div className="flex h-full w-max items-center gap-4 pr-10 pt-2">
+              {fanPages.map(({ page, index }, fanIndex) => {
+                const fanShift = -(fanIndex * Math.min(size.width * 0.86, 430));
+                return (
+                  <div
+                    key={`fan-${index}`}
+                    className="cookbook-fan-page shrink-0 overflow-hidden border border-black/15 bg-[#f7f2e8] shadow-[0_22px_48px_rgba(41,35,31,.22)]"
+                    style={{
+                      width: size.width,
+                      height: size.height,
+                      animationDelay: `${fanIndex * 80}ms`,
+                      "--fan-shift": `${fanShift}px`,
+                    } as CSSProperties}
+                  >
+                    <div className="pointer-events-none h-full w-full">{renderPage(page, index, undefined, `fan-${fanIndex}`)}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

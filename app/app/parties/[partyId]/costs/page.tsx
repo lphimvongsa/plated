@@ -8,7 +8,7 @@ export default async function CostsPage({ params }: { params: Promise<{ partyId:
   const { partyId } = await params;
   const supabase = await createClient();
 
-  const [{ data: party }, { data: grocery }, { data: menuItems }] = await Promise.all([
+  const [{ data: party }, { data: grocery }, { data: menuItems }, { data: recipes }, { count: receiptCount }] = await Promise.all([
     supabase
       .from("parties")
       .select("id, planning_guest_count, shopping_dirty")
@@ -19,12 +19,18 @@ export default async function CostsPage({ params }: { params: Promise<{ partyId:
       .select("estimated_cost, actual_cost, already_owned, purchased")
       .eq("party_id", partyId),
     supabase.from("menu_items").select("recipe_id, sort_order").eq("party_id", partyId).order("sort_order"),
+    supabase
+      .from("recipes")
+      .select("id, title, image_url, estimated_cost, servings")
+      .eq("party_id", partyId),
+    supabase.from("receipts").select("id", { count: "exact", head: true }).eq("party_id", partyId),
   ]);
   if (!party) notFound();
   const summary = await getPartyCostSummary(supabase, partyId, {
     party,
     grocery: grocery ?? [],
     menuItems: menuItems ?? [],
+    recipes: recipes ?? [],
   });
 
   const actualLogged = (grocery ?? []).reduce((sum, item) => sum + (item.actual_cost ?? 0), 0);
@@ -33,6 +39,7 @@ export default async function CostsPage({ params }: { params: Promise<{ partyId:
     <div className="space-y-8">
       {party.shopping_dirty ? <ShoppingSyncBanner partyId={partyId} /> : null}
       <CostsPanel
+      partyId={partyId}
       estimate={summary.estimatedTotal}
       actualLogged={actualLogged}
       recipes={summary.dishes.map((dish) => ({
@@ -43,6 +50,7 @@ export default async function CostsPage({ params }: { params: Promise<{ partyId:
         servings: dish.servings,
       }))}
       guestCount={summary.guestCount}
+      receiptCount={receiptCount ?? 0}
       />
     </div>
   );

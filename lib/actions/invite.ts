@@ -15,10 +15,8 @@ export async function loadInvite(token: string): Promise<InvitePayload> {
 export async function submitRsvp(input: {
   token: string;
   name: string;
-  email: string;
   rsvpStatus: "attending" | "maybe" | "not_attending";
-  allergies?: string;
-  dietaryPreference?: string;
+  allergies?: string | null;
   plusOneCount?: number;
   notes?: string;
 }): Promise<InvitePayload> {
@@ -26,10 +24,9 @@ export async function submitRsvp(input: {
   const { data, error } = await supabase.rpc("rsvp_via_invite_token", {
     p_token: input.token,
     p_name: input.name,
-    p_email: input.email,
+    p_email: "",
     p_rsvp_status: input.rsvpStatus,
     p_allergies: input.allergies || undefined,
-    p_dietary_preference: input.dietaryPreference || undefined,
     p_plus_one_count: input.plusOneCount ?? 0,
     p_notes: input.notes || undefined,
   });

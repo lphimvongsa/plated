@@ -16,6 +16,7 @@ import {
 import { displayIngredientName, guessIngredientCategory } from "@/lib/recipes/standardize";
 import type { IngredientFields, RecipeFields, RecipeStepFields } from "@/lib/recipes/types";
 import { formatMinutes } from "@/lib/rsvp";
+import { ACCENT_COLOR_PALETTE } from "@/lib/party/themes";
 import {
   AlertTriangle,
   ArrowDown,
@@ -190,6 +191,8 @@ export function RecipeEditor({
   const [title, setTitle] = useState(recipe?.title ?? "");
   const [description, setDescription] = useState(recipe?.description ?? "");
   const [imageUrl, setImageUrl] = useState(recipe?.image_url ?? "");
+  const [colorHex, setColorHex] = useState(recipe?.color_hex ?? ACCENT_COLOR_PALETTE[0]);
+  const [coverTextColor, setCoverTextColor] = useState(recipe?.cover_text_color ?? "#ffffff");
   const [sourceUrl, setSourceUrl] = useState(recipe?.source_url ?? "");
   const [servings, setServings] = useState(recipe?.servings ?? 4);
   const [prepMinutes, setPrepMinutes] = useState<number | "">(recipe?.prep_minutes ?? "");
@@ -334,6 +337,8 @@ export function RecipeEditor({
         title: title.trim() || "Untitled recipe",
         description: description.trim() || null,
         image_url: imageUrl.trim() || null,
+        color_hex: colorHex || null,
+        cover_text_color: coverTextColor || "#ffffff",
         source_url: sourceUrl.trim() || null,
         servings: Number.isFinite(Number(servings)) ? Number(servings) : 4,
         prep_minutes: prepMinutes === "" ? null : Number(prepMinutes),
@@ -936,6 +941,46 @@ export function RecipeEditor({
                 onChange={(e) => setImageUrl(e.target.value)}
               />
             </label>
+            <div className="mt-3 flex flex-wrap items-end gap-4">
+              <div>
+                <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-paper/70">Recipe color</span>
+                <div className="flex flex-wrap gap-1.5 rounded-[2px] bg-paper/90 p-2">
+                  {ACCENT_COLOR_PALETTE.map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      aria-label={`Use recipe color ${color}`}
+                      onClick={() => setColorHex(color)}
+                      className={`h-6 w-6 rounded-full border-2 transition hover:-translate-y-0.5 ${colorHex === color ? "border-ink shadow-sm" : "border-transparent"}`}
+                      style={{ backgroundColor: color }}
+                    />
+                  ))}
+                  <input
+                    type="color"
+                    value={colorHex}
+                    onChange={(event) => setColorHex(event.target.value)}
+                    aria-label="Custom recipe color"
+                    className="h-6 w-8 cursor-pointer rounded border-0 bg-transparent p-0"
+                  />
+                </div>
+              </div>
+              <label>
+                <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-paper/70">Cookbook title color</span>
+                <div className="flex items-center gap-2 rounded-[2px] bg-paper/90 p-2 text-ink">
+                  {["#ffffff", "#251c18"].map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => setCoverTextColor(color)}
+                      className={`h-6 w-6 rounded-full border-2 ${coverTextColor.toLowerCase() === color ? "border-tomato" : "border-ink/15"}`}
+                      style={{ backgroundColor: color }}
+                      aria-label={color === "#ffffff" ? "White cover text" : "Dark cover text"}
+                    />
+                  ))}
+                  <input type="color" value={coverTextColor} onChange={(event) => setCoverTextColor(event.target.value)} className="h-6 w-8 cursor-pointer border-0 bg-transparent p-0" aria-label="Custom cookbook title color" />
+                </div>
+              </label>
+            </div>
           </div>
         </div>
       </section>

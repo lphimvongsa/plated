@@ -16,7 +16,7 @@ export default async function PartyLayout({
   const [{ data: party }, { data: members }, { data: invite }] = await Promise.all([
     supabase
       .from("parties")
-      .select("id, name, starts_at, timezone, status")
+      .select("id, name, starts_at, timezone, status, color_scheme")
       .eq("id", partyId)
       .maybeSingle(),
     supabase
@@ -53,6 +53,7 @@ export default async function PartyLayout({
         starts_at: party.starts_at,
         timezone: party.timezone,
         status: party.status,
+        color_scheme: party.color_scheme,
       }}
       collaborators={collaborators}
       previewToken={invite?.token ?? null}

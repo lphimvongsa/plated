@@ -1,5 +1,6 @@
 import { GroceryOwnedToggle, GroceryPurchasedToggle } from "@/components/party/shopping-toggles";
 import { ShoppingSyncBanner } from "@/components/party/shopping-sync-banner";
+import { ReceiptScanner } from "@/components/party/receipt-scanner";
 import { getPartyCostSummary } from "@/lib/party/cost-summary";
 import { formatGroceryQuantity } from "@/lib/recipes/quantity";
 import { createClient } from "@/lib/supabase/server";
@@ -10,7 +11,7 @@ export default async function ShoppingPage({ params }: { params: Promise<{ party
   const { partyId } = await params;
   const supabase = await createClient();
 
-  const [{ data: party }, { data: items }, { data: menuItems }] = await Promise.all([
+  const [{ data: party }, { data: items }, { data: menuItems }, { data: recipeRows }] = await Promise.all([
     supabase
       .from("parties")
       .select("id, planning_guest_count, shopping_dirty")
@@ -18,6 +19,10 @@ export default async function ShoppingPage({ params }: { params: Promise<{ party
       .maybeSingle(),
     supabase.from("grocery_items").select("*").eq("party_id", partyId).order("sort_order"),
     supabase.from("menu_items").select("recipe_id, sort_order").eq("party_id", partyId).order("sort_order"),
+    supabase
+      .from("recipes")
+      .select("id, title, image_url, estimated_cost, servings")
+      .eq("party_id", partyId),
   ]);
   if (!party) notFound();
 
@@ -26,12 +31,9 @@ export default async function ShoppingPage({ params }: { params: Promise<{ party
     party,
     grocery: allItems,
     menuItems: menuItems ?? [],
+    recipes: recipeRows ?? [],
   });
-  const sourceIds = Array.from(new Set(allItems.flatMap((item) => item.source_recipe_ids ?? [])));
-  const { data: sourceRecipes } = sourceIds.length
-    ? await supabase.from("recipes").select("id, title").in("id", sourceIds)
-    : { data: [] as { id: string; title: string }[] };
-  const recipeTitleById = new Map((sourceRecipes ?? []).map((recipe) => [recipe.id, recipe.title]));
+  const recipeTitleById = new Map((recipeRows ?? []).map((recipe) => [recipe.id, recipe.title]));
 
   const owned = allItems.filter((item) => item.already_owned);
   const buyList = allItems.filter((item) => !item.already_owned);
@@ -53,9 +55,12 @@ export default async function ShoppingPage({ params }: { params: Promise<{ party
         <div>
           <h2 className="font-editorial text-5xl font-semibold">Grocery List</h2>
         </div>
-        <button className="btn-primary" disabled>
-          <Plus size={16} /> Add item
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <ReceiptScanner partyId={partyId} />
+          <button className="btn-secondary" disabled>
+            <Plus size={16} /> Add item
+          </button>
+        </div>
       </section>
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <article className="card p-5">

@@ -1,6 +1,8 @@
 import { formatPartyWhen } from "@/lib/calendar";
+import { formatAllergyList, hasAllergyList } from "@/lib/rsvp";
 import type { Database } from "@/lib/database.types";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthenticatedUserId } from "@/lib/supabase/auth";
 import { AlertTriangle, ArrowRight, CalendarDays, Clock3, Plus, ShoppingBasket } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -30,26 +32,27 @@ const DAY_MS = 1000 * 60 * 60 * 24;
 
 export default async function DashboardPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const userId = await getAuthenticatedUserId();
 
-  if (!user) redirect("/auth/login");
+  if (!userId) redirect("/auth/login");
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("name, onboarding_complete")
-    .eq("id", user.id)
-    .maybeSingle();
+  // These reads are independent; issuing them together removes one database
+  // round-trip from the dashboard's critical path.
+  const [{ data: profile }, { data: memberships }] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("name, onboarding_complete")
+      .eq("id", userId)
+      .maybeSingle(),
+    supabase
+      .from("party_members")
+      .select("party_id")
+      .eq("user_id", userId),
+  ]);
 
   if (profile && !profile.onboarding_complete) {
     redirect("/onboarding");
   }
-
-  const { data: memberships } = await supabase
-    .from("party_members")
-    .select("party_id")
-    .eq("user_id", user.id);
 
   const partyIds = [...new Set((memberships ?? []).map((row) => row.party_id))];
   const { data: partyRows } =
@@ -104,14 +107,14 @@ export default async function DashboardPage() {
     const partyDishes = dishes.filter((dish) => dish.party_id === party.id);
     const daysAway = daysUntil(party.starts_at);
 
-    const allergyGuests = partyGuests.filter((guest) => guest.allergies?.trim());
+    const allergyGuests = partyGuests.filter((guest) => hasAllergyList(guest.allergies));
     if (allergyGuests.length > 0 && partyDishes.length > 0) {
       const flagged = partyDishes.filter((dish) => dish.allergy_notes?.trim()).length;
       alerts.push({
         id: `${party.id}-allergy`,
         label: "Allergy conflict",
         title: `${allergyGuests.length} guest${allergyGuests.length === 1 ? "" : "s"} with allergies on ${party.name}`,
-        detail: `${allergyGuests.map((guest) => guest.allergies?.trim()).join(", ")} · ${flagged} dish${flagged === 1 ? "" : "es"} flagged`,
+        detail: `${allergyGuests.map((guest) => formatAllergyList(guest.allergies)).filter(Boolean).join(", ")} · ${flagged} dish${flagged === 1 ? "" : "es"} flagged`,
         href: `${base}/menu`,
         urgent: true,
       });

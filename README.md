@@ -35,6 +35,7 @@ npm start
 - `/app/parties/new` — party creation flow
 - `/app/parties/[partyId]` — party overview and planning tabs (menu, recipes, guests, shopping, timeline, costs, settings)
 - `/invite/[token]` — durable per-guest invitation + RSVP (no account) with Google Calendar / `.ics`
+- `/invite/[token]/calendar` — downloadable calendar file for Apple Calendar, Outlook, and Google
 
 ## Implemented in this slice
 
@@ -44,7 +45,9 @@ npm start
 - Dynamic `/app/parties/[partyId]` routes replacing the hardcoded demo party
 - Durable per-guest `/invite/[token]` pages (revisit + edit while active)
 - Soft-expire 7 days after party end; `cleanup_expired_parties()` for 30-day hard-delete
-- Google Calendar + `.ics` on invite pages
+- Google Calendar + `.ics` on invite pages, invite emails, and `/invite/[token]/calendar`
+- Email invitations via Gmail SMTP and SMS invitations via Twilio (set keys in `.env.local`)
+- Per-guest send: email, phone, or copy link
 - Demo “Last Light Supper” seeded on first onboarding completion
 
 ## Still required for a functional production MVP
@@ -53,11 +56,19 @@ npm start
 - Real recipe URL parsing, PDF extraction, image extraction, and normalization
 - Reliable unit conversion and recipe scaling engine
 - AI integrations for substitutions, cost estimation, kitchen analysis, dependency extraction, scheduling, and delegation
-- Resend or equivalent email integration
-- Twilio or equivalent SMS integration
 - OCR and receipt reconciliation
 - Production-grade offline caching and push notifications
 - Automated testing, analytics, error monitoring, accessibility audit, privacy, and security work
 - Hosted Supabase project + Google OAuth provider credentials in the dashboard
 
 See `PRODUCT_SPEC.md` for the full product specification.
+
+## Revamp v2 database migration
+
+This build adds party palettes/media, invitation drafts, editable timeline colors, and cookbook cover text colors. Apply the included Supabase migration before using those features against an existing hosted database:
+
+```bash
+npx supabase db push
+```
+
+The migration also creates the public `party-media` Storage bucket with party-member write policies.

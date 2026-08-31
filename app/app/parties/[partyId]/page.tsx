@@ -1,5 +1,7 @@
+import { CroppedImage } from "@/components/media/cropped-image";
+import { cropFromJson } from "@/lib/media/crop";
 import { formatPartyWhen } from "@/lib/calendar";
-import { formatRsvpStatus, initialsFromName } from "@/lib/rsvp";
+import { formatAllergyList, formatRsvpStatus, hasAllergyList, initialsFromName } from "@/lib/rsvp";
 import { createClient } from "@/lib/supabase/server";
 import { ArrowRight, Check, CheckCircle2, DollarSign, Sparkles } from "lucide-react";
 import Link from "next/link";
@@ -58,12 +60,13 @@ export default async function PartyOverviewPage({ params }: { params: Promise<{ 
 
   return (
     <div className="space-y-12">
-      <section className="grid border border-ink/15 bg-[#f8f4ec] lg:grid-cols-[1.22fr_.78fr]">
+      <section className="grid border border-ink/15 bg-paper-2 lg:grid-cols-[1.22fr_.78fr]">
         <div className="relative min-h-[430px] overflow-hidden border-b border-ink/15 lg:min-h-[560px] lg:border-b-0 lg:border-r">
-          <img
+          <CroppedImage
             src={party.hero_image || "/photos/party-01.webp"}
             alt={`${party.name} cover`}
-            className="absolute inset-0 h-full w-full object-cover object-[50%_55%]"
+            crop={cropFromJson(party.cover_crop)}
+            className="absolute inset-0 h-full w-full"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-ink/35 via-transparent to-transparent" />
           <div className="absolute bottom-5 left-5 border border-paper/60 bg-paper/92 px-4 py-3 md:bottom-8 md:left-8">
@@ -195,7 +198,7 @@ export default async function PartyOverviewPage({ params }: { params: Promise<{ 
 
         <Link
           href={`${base}/guests`}
-          className="block border border-ink/15 bg-[#f8f4ec] p-6 transition hover:border-ink/30 md:p-7"
+          className="block border border-ink/15 bg-paper-2 p-6 transition hover:border-ink/30 md:p-7"
         >
           <div className="flex flex-wrap items-end justify-between gap-3">
             <h2 className="font-editorial text-4xl font-semibold leading-none">Guest List</h2>
@@ -212,7 +215,7 @@ export default async function PartyOverviewPage({ params }: { params: Promise<{ 
             ) : (
               guestList.map((guest, index) => {
                 const status = formatRsvpStatus(guest.rsvp_status);
-                const allergies = guest.allergies?.trim();
+                const allergies = formatAllergyList(guest.allergies);
                 return (
                   <div key={guest.id} className="grid grid-cols-[36px_1fr_auto] items-center gap-4 py-4">
                     <div
@@ -222,7 +225,7 @@ export default async function PartyOverviewPage({ params }: { params: Promise<{ 
                     </div>
                     <div className="min-w-0">
                       <p className="text-xs font-semibold">{guest.name}</p>
-                      {allergies && allergies.toLowerCase() !== "none" ? (
+                      {hasAllergyList(guest.allergies) ? (
                         <p className="mt-1 inline-block max-w-full truncate rounded-[2px] bg-orange/15 px-1.5 py-0.5 text-[10px] font-semibold text-orange">
                           {allergies}
                         </p>
@@ -262,7 +265,7 @@ export default async function PartyOverviewPage({ params }: { params: Promise<{ 
         </article>
       </section>
 
-      <section className="overflow-hidden border border-ink/15 bg-[#f8f4ec] lg:grid lg:grid-cols-[1.1fr_1fr]">
+      <section className="overflow-hidden border border-ink/15 bg-paper-2 lg:grid lg:grid-cols-[1.1fr_1fr]">
         <div className="min-h-[220px] overflow-hidden border-b border-ink/15 lg:min-h-[280px] lg:border-b-0 lg:border-r">
           <img
             src="/photos/party-09.webp"

@@ -1,6 +1,8 @@
 "use client";
 
 import { formatPartyWhen } from "@/lib/calendar";
+import { PartyThemeBridge } from "@/components/party-theme-bridge";
+import { partyThemeCssVars } from "@/lib/party/themes";
 import { ChevronLeft, ExternalLink, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -12,6 +14,7 @@ export type PartyShellParty = {
   starts_at: string;
   timezone: string;
   status: string;
+  color_scheme: string;
 };
 
 type PartyShellProps = {
@@ -31,6 +34,7 @@ export function PartyShell({ party, collaborators, previewToken, children }: Par
     [base, "Overview"],
     [`${base}/menu`, "Menu"],
     [`${base}/recipes`, "Recipes"],
+    [`${base}/invitation`, "Invitation"],
     [`${base}/guests`, "Guests"],
     [`${base}/shopping`, "Shopping"],
     [`${base}/timeline`, "Timeline"],
@@ -38,11 +42,13 @@ export function PartyShell({ party, collaborators, previewToken, children }: Par
     [`${base}/settings`, "Settings"],
   ] as const;
 
-  const previewHref = previewToken ? `/invite/${previewToken}` : `${base}/guests`;
+  const previewHref = previewToken ? `/invite/${previewToken}` : `${base}/invitation`;
 
   return (
-    <div>
-      <div className="border-b border-ink/15 bg-[#f7f3eb] px-4 py-6 md:px-8 xl:px-12">
+    <>
+      <PartyThemeBridge scheme={party.color_scheme} />
+      <div className="party-theme min-h-full bg-paper text-ink" style={partyThemeCssVars(party.color_scheme)}>
+      <div className="border-b border-ink/15 bg-paper-2 px-4 py-6 md:px-8 xl:px-12">
         <div className="mx-auto max-w-7xl">
           <Link href="/app/parties" className="editorial-link text-ink/45 hover:text-tomato">
             <ChevronLeft size={13} /> All parties
@@ -66,7 +72,7 @@ export function PartyShell({ party, collaborators, previewToken, children }: Par
                   {collaborators.map((initials, index) => (
                     <div
                       key={`${initials}-${index}`}
-                      className={`grid h-9 w-9 place-items-center rounded-full border-2 border-[#f7f3eb] text-[9px] font-bold ${
+                      className={`grid h-9 w-9 place-items-center rounded-full border-2 border-paper-2 text-[9px] font-bold ${
                         index === 0 ? "bg-tomato text-paper" : index === 1 ? "bg-olive text-paper" : "bg-blush text-ink"
                       }`}
                     >
@@ -83,7 +89,7 @@ export function PartyShell({ party, collaborators, previewToken, children }: Par
                   <ExternalLink size={15} /> Preview
                 </Link>
               ) : (
-                <Link href={`${base}/guests`} className="btn-secondary">
+                <Link href={`${base}/invitation`} className="btn-secondary">
                   <ExternalLink size={15} /> Preview
                 </Link>
               )}
@@ -93,15 +99,17 @@ export function PartyShell({ party, collaborators, previewToken, children }: Par
       </div>
 
       <div className="sticky top-[62px] z-20 overflow-x-auto border-b border-ink/15 bg-paper/96 px-4 backdrop-blur lg:top-0 md:px-8 xl:px-12">
-        <nav className="mx-auto flex max-w-7xl min-w-max gap-7">
+        <nav className="mx-auto flex max-w-7xl min-w-max gap-2 py-1.5">
           {tabs.map(([href, label]) => {
             const active = pathname === href;
             return (
               <Link
                 key={href}
                 href={href}
-                className={`border-b-2 py-3 text-[10px] font-bold uppercase tracking-[0.13em] transition ${
-                  active ? "border-tomato text-tomato" : "border-transparent text-ink/48 hover:text-ink"
+                className={`rounded-[2px] border border-transparent px-3 py-2.5 text-[10px] font-bold uppercase tracking-[0.13em] transition duration-200 ${
+                  active
+                    ? "border-tomato/25 bg-tomato/[0.08] text-tomato"
+                    : "text-ink/48 hover:-translate-y-0.5 hover:border-ink/10 hover:bg-paper-2 hover:text-tomato hover:shadow-[0_6px_16px_rgba(41,35,31,0.08)]"
                 }`}
               >
                 {label}
@@ -112,6 +120,7 @@ export function PartyShell({ party, collaborators, previewToken, children }: Par
       </div>
 
       <div className="mx-auto max-w-7xl p-4 md:p-8 xl:px-12 xl:py-10">{children}</div>
-    </div>
+      </div>
+    </>
   );
 }

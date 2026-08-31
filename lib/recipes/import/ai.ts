@@ -7,6 +7,7 @@ import {
   mergeDuplicateIngredients,
 } from "@/lib/recipes/import/quality";
 import { normalizeIngredientCategory } from "@/lib/recipes/pantry";
+import { inferAllergensFromIngredient, aggregateRecipeAllergens } from "@/lib/allergens";
 import {
   displayIngredientName,
   guessIngredientCategory,
@@ -75,7 +76,8 @@ Rules:
   - cuisine: short label when obvious (Italian, Mexican, American, etc.)
   - difficulty: Easy | Medium | Hard
   - dietary_tags: e.g. vegetarian, vegan, gluten-free, dairy-free when clearly true
-  - allergy_tags: common allergens present (dairy, gluten, nuts, shellfish, eggs, soy, fish)
+  - allergy_tags: use canonical allergens: milk, egg, fish, shellfish, tree nuts, peanut, wheat, soy, sesame, gluten. Infer allergens from ingredient identity even when the source does not say them explicitly (for example tofu/tempeh/miso/edamame -> soy; tahini -> sesame; butter/cheese/cream -> milk; pasta/flour/bread -> wheat + gluten; soy sauce -> soy and usually wheat + gluten).
+  - Every ingredient allergen_tags array should use those same canonical labels. If an ingredient may contain an allergen but the exact product is ambiguous, include the likely allergen and add a short warning.
   - equipment, make_ahead_notes, storage_notes, reheating_notes, notes
   - prep_minutes, cook_minutes, total_minutes (estimate if missing)
 - Prefer ISO-like clarity. Do not invent ingredients that are not implied by the source.
@@ -233,7 +235,7 @@ function normalizeAiDraft(
         section: asString(row.section),
         // Ownership comes from user_pantry_items after import — never from the model.
         pantry_flag: false,
-        allergen_tags: asStringArray(row.allergen_tags),
+        allergen_tags: inferAllergensFromIngredient(display, asStringArray(row.allergen_tags)),
         sort_order: asNumber(row.sort_order) ?? index,
       };
     })
@@ -281,7 +283,7 @@ function normalizeAiDraft(
     difficulty: normalizeDifficulty(asString(recipeObj.difficulty)),
     tags: asStringArray(recipeObj.tags),
     dietary_tags: asStringArray(recipeObj.dietary_tags),
-    allergy_tags: asStringArray(recipeObj.allergy_tags),
+    allergy_tags: aggregateRecipeAllergens(ingredients as Array<{ name: string; allergen_tags?: string[] }>, asStringArray(recipeObj.allergy_tags)),
     image_url: asString(recipeObj.image_url) ?? hints.image_url ?? null,
     source_url: asString(recipeObj.source_url) ?? hints.source_url ?? null,
     equipment: asStringArray(recipeObj.equipment),

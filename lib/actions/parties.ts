@@ -2,8 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import type { Database } from "@/lib/database.types";
+import type { Database, Json } from "@/lib/database.types";
+import { durationMinutesBetween, parsePartyDurationMinutes, partyEndsAt } from "@/lib/party/duration";
 import { schedulePartyDerivedRefresh } from "@/lib/party/refresh-derived";
+import { normalizePhone } from "@/lib/outbound/phone";
 import { createClient } from "@/lib/supabase/server";
 
 type PartyUpdate = Database["public"]["Tables"]["parties"]["Update"];
@@ -35,9 +37,17 @@ export async function createParty(formData: FormData) {
   const theme = String(formData.get("theme") ?? "").trim();
   const cuisine = String(formData.get("cuisine") ?? "").trim();
   const serviceStyle = String(formData.get("service_style") ?? "Family style").trim();
+  const dressCode = String(formData.get("dress_code") ?? "").trim();
+  const guestContributionNotes = String(formData.get("guest_contribution_notes") ?? "").trim();
   const guestCount = Number(formData.get("guest_count") ?? 8);
+  const durationMinutes = parsePartyDurationMinutes(formData.get("duration_minutes"));
   const startsAt = new Date(`${date}T${time}:00`);
   const prepLeadDays = Number(formData.get("prep_lead_days") ?? 14);
+  const colorScheme = String(formData.get("color_scheme") ?? "tomato-cream");
+  const coverPosition = String(formData.get("cover_position") ?? "50% 50%");
+  let coverCrop: Record<string, number> | null = null;
+  try { coverCrop = JSON.parse(String(formData.get("cover_crop") ?? "null")); } catch { coverCrop = null; }
+  const heroChoice = String(formData.get("hero_image") ?? "/photos/party-01.webp");
 
   const { data: party, error } = await supabase
     .from("parties")
@@ -45,21 +55,39 @@ export async function createParty(formData: FormData) {
       owner_id: user.id,
       name,
       starts_at: startsAt.toISOString(),
-      ends_at: new Date(startsAt.getTime() + 3 * 60 * 60 * 1000).toISOString(),
+      ends_at: partyEndsAt(startsAt, durationMinutes).toISOString(),
       prep_starts_at: prepStartFromLead(startsAt, prepLeadDays).toISOString(),
       location,
       theme,
       cuisine,
       service_style: serviceStyle,
+      dress_code: dressCode || null,
+      guest_contribution_notes: guestContributionNotes || null,
       planning_guest_count: Number.isFinite(guestCount) ? guestCount : 8,
       status: "scheduled",
-      hero_image: "/photos/party-01.webp",
+      hero_image: heroChoice || "/photos/party-01.webp",
+      color_scheme: colorScheme,
+      cover_position: coverPosition,
+      cover_crop: coverCrop,
+      invitation_photo_urls: [heroChoice || "/photos/party-01.webp"],
+      invitation_draft: true,
     })
     .select("id")
     .single();
 
   if (error || !party) {
     return { error: error?.message ?? "Could not create party." };
+  }
+
+  const coverFile = formData.get("cover_photo");
+  if (coverFile instanceof File && coverFile.size > 0) {
+    const uploaded = await uploadPartyImage(supabase, party.id, coverFile);
+    if (!uploaded.error && uploaded.url) {
+      await supabase.from("parties").update({
+        hero_image: uploaded.url,
+        invitation_photo_urls: [uploaded.url],
+      }).eq("id", party.id);
+    }
   }
 
   // Owner membership is created by parties_add_owner_member trigger.
@@ -75,9 +103,15 @@ export async function updatePartySettings(partyId: string, formData: FormData) {
   const serviceStyle = String(formData.get("service_style") ?? "").trim();
   const dressCode = String(formData.get("dress_code") ?? "").trim();
   const guestContributionNotes = String(formData.get("guest_contribution_notes") ?? "").trim();
+  const colorScheme = String(formData.get("color_scheme") ?? "tomato-cream");
+  const coverPosition = String(formData.get("cover_position") ?? "50% 50%");
+  let coverCrop: Record<string, number> | null = null;
+  try { coverCrop = JSON.parse(String(formData.get("cover_crop") ?? "null")); } catch { coverCrop = null; }
+  const heroImage = String(formData.get("hero_image") ?? "").trim();
   const planningGuestCountRaw = formData.get("planning_guest_count");
   const date = String(formData.get("date") ?? "");
   const time = String(formData.get("time") ?? "");
+  const durationMinutes = parsePartyDurationMinutes(formData.get("duration_minutes"));
   const prepDate = String(formData.get("prep_date") ?? "");
 
   const patch: PartyUpdate = {
@@ -88,6 +122,10 @@ export async function updatePartySettings(partyId: string, formData: FormData) {
     service_style: serviceStyle,
     dress_code: dressCode,
     guest_contribution_notes: guestContributionNotes,
+    color_scheme: colorScheme,
+    cover_position: coverPosition,
+    cover_crop: coverCrop,
+    ...(heroImage ? { hero_image: heroImage } : {}),
   };
 
   if (planningGuestCountRaw != null && planningGuestCountRaw !== "") {
@@ -100,11 +138,18 @@ export async function updatePartySettings(partyId: string, formData: FormData) {
   if (date && time) {
     const startsAt = new Date(`${date}T${time}:00`);
     patch.starts_at = startsAt.toISOString();
-    patch.ends_at = new Date(startsAt.getTime() + 3 * 60 * 60 * 1000).toISOString();
+    patch.ends_at = partyEndsAt(startsAt, durationMinutes).toISOString();
   }
 
   if (prepDate) {
     patch.prep_starts_at = new Date(`${prepDate}T09:00:00`).toISOString();
+  }
+
+  const coverFile = formData.get("cover_photo");
+  if (coverFile instanceof File && coverFile.size > 0) {
+    const uploaded = await uploadPartyImage(supabase, partyId, coverFile);
+    if (uploaded.error) return { error: uploaded.error };
+    if (uploaded.url) patch.hero_image = uploaded.url;
   }
 
   const { error } = await supabase.from("parties").update(patch).eq("id", partyId);
@@ -114,6 +159,7 @@ export async function updatePartySettings(partyId: string, formData: FormData) {
     schedulePartyDerivedRefresh(partyId);
   }
 
+  revalidatePath(`/app/parties/${partyId}`, "layout");
   revalidatePath(`/app/parties/${partyId}`);
   revalidatePath(`/app/parties/${partyId}/menu`);
   revalidatePath(`/app/parties/${partyId}/shopping`);
@@ -164,12 +210,16 @@ export async function toggleTaskLocked(taskId: string, locked: boolean, partyId:
   revalidatePath(`/app/parties/${partyId}/timeline`);
 }
 
-export async function addGuest(partyId: string, formData: FormData) {
+export async function addGuest(
+  partyId: string,
+  input: { name: string; email?: string; phone?: string } | FormData,
+) {
   const supabase = await createClient();
-  const name = String(formData.get("name") ?? "").trim();
-  const email = String(formData.get("email") ?? "").trim();
+  const name = input instanceof FormData ? String(input.get("name") ?? "").trim() : input.name.trim();
+  const email = input instanceof FormData ? String(input.get("email") ?? "").trim() : (input.email ?? "").trim();
+  const phone = input instanceof FormData ? String(input.get("phone") ?? "").trim() : (input.phone ?? "").trim();
 
-  if (!name) return { error: "Name is required." };
+  if (!name) return { error: "Name is required.", guestId: null, inviteId: null, token: null };
 
   const { data: guest, error } = await supabase
     .from("guests")
@@ -177,22 +227,29 @@ export async function addGuest(partyId: string, formData: FormData) {
       party_id: partyId,
       name,
       email: email || null,
+      phone: phone ? normalizePhone(phone) || phone : null,
       rsvp_status: "no_response",
     })
     .select("id")
     .single();
 
-  if (error || !guest) return { error: error?.message ?? "Could not add guest." };
+  if (error || !guest) return { error: error?.message ?? "Could not add guest.", guestId: null, inviteId: null, token: null };
 
-  const { error: inviteError } = await supabase.from("invites").insert({
-    party_id: partyId,
-    guest_id: guest.id,
-  });
+  const { data: invite, error: inviteError } = await supabase
+    .from("invites")
+    .insert({
+      party_id: partyId,
+      guest_id: guest.id,
+    })
+    .select("id, token")
+    .single();
 
-  if (inviteError) return { error: inviteError.message };
+  if (inviteError || !invite) {
+    return { error: inviteError?.message ?? "Could not create an invite.", guestId: guest.id, inviteId: null, token: null };
+  }
 
   revalidatePath(`/app/parties/${partyId}/guests`);
-  return { error: null };
+  return { error: null, guestId: guest.id, inviteId: invite.id, token: invite.token };
 }
 
 export async function revokeInvite(inviteId: string, partyId: string) {
@@ -216,4 +273,113 @@ export async function regenerateInvite(inviteId: string, partyId: string) {
   if (error) return { error: error.message };
   revalidatePath(`/app/parties/${partyId}/guests`);
   return { error: null, token };
+}
+
+export async function deleteGuest(guestId: string, partyId: string) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("guests").delete().eq("id", guestId).eq("party_id", partyId);
+  if (error) return { error: error.message };
+  revalidatePath(`/app/parties/${partyId}/guests`);
+  revalidatePath(`/app/parties/${partyId}`);
+  return { error: null };
+}
+
+const PARTY_MEDIA_BUCKET = "party-media";
+
+async function uploadPartyImage(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  partyId: string,
+  file: File,
+) {
+  if (!file.size || !file.type.startsWith("image/")) return { url: null, error: "Choose an image file." };
+  if (file.size > 12 * 1024 * 1024) return { url: null, error: "Cover photos must be under 12 MB." };
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-").slice(-80) || "cover.jpg";
+  const path = `${partyId}/${crypto.randomUUID()}-${safeName}`;
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const { error } = await supabase.storage.from(PARTY_MEDIA_BUCKET).upload(path, bytes, {
+    contentType: file.type,
+    upsert: false,
+  });
+  if (error) return { url: null, error: error.message };
+  return { url: supabase.storage.from(PARTY_MEDIA_BUCKET).getPublicUrl(path).data.publicUrl, error: null };
+}
+
+export async function updateInvitationDraft(partyId: string, formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in." };
+
+  const { data: party } = await supabase
+    .from("parties")
+    .select("starts_at, ends_at")
+    .eq("id", partyId)
+    .maybeSingle();
+  if (!party) return { error: "Party not found." };
+
+  const photos = formData.getAll("invitation_photo_urls").map(String).filter(Boolean).slice(0, 5);
+  const photoPositions = formData.getAll("invitation_photo_positions").map(String).slice(0, photos.length);
+  let photoCrops: Json[] = [];
+  let menuOverrides: Record<string, { title?: string; description?: string }> = {};
+  try {
+    const parsed = JSON.parse(String(formData.get("invitation_photo_crops") ?? "[]"));
+    if (Array.isArray(parsed)) photoCrops = parsed.slice(0, photos.length) as Json[];
+  } catch { photoCrops = []; }
+  try {
+    const parsed = JSON.parse(String(formData.get("invitation_menu_overrides") ?? "{}"));
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) menuOverrides = parsed;
+  } catch { menuOverrides = {}; }
+  const date = String(formData.get("date") ?? "");
+  const time = String(formData.get("time") ?? "");
+  const patch: PartyUpdate = {
+    location: String(formData.get("location") ?? "").trim(),
+    color_scheme: String(formData.get("color_scheme") ?? "tomato-cream"),
+    invitation_headline: String(formData.get("invitation_headline") ?? "").trim() || null,
+    invitation_message: String(formData.get("invitation_message") ?? "").trim() || null,
+    invitation_signoff: String(formData.get("invitation_signoff") ?? "").trim() || null,
+    invitation_rsvp_label: String(formData.get("invitation_rsvp_label") ?? "").trim() || null,
+    dress_code: String(formData.get("dress_code") ?? "").trim() || null,
+    guest_contribution_notes: String(formData.get("guest_contribution_notes") ?? "").trim() || null,
+    invitation_photo_urls: photos,
+    invitation_photo_positions: photoPositions,
+    invitation_photo_crops: photoCrops,
+    invitation_menu_overrides: menuOverrides,
+    invitation_draft: true,
+  };
+  if (date && time) {
+    const startsAt = new Date(`${date}T${time}:00`);
+    const durationMinutes = durationMinutesBetween(party.starts_at, party.ends_at);
+    patch.starts_at = startsAt.toISOString();
+    patch.ends_at = partyEndsAt(startsAt, durationMinutes).toISOString();
+  }
+
+  const { error } = await supabase.from("parties").update(patch).eq("id", partyId);
+  if (error) return { error: error.message };
+  revalidatePath(`/app/parties/${partyId}`, "layout");
+  revalidatePath(`/app/parties/${partyId}`);
+  revalidatePath(`/app/parties/${partyId}/invitation`);
+  return { error: null };
+}
+
+export async function uploadPartyCover(partyId: string, formData: FormData) {
+  const supabase = await createClient();
+  const file = formData.get("cover_photo");
+  if (!(file instanceof File)) return { error: "Choose a photo." };
+  const upload = await uploadPartyImage(supabase, partyId, file);
+  if (upload.error || !upload.url) return { error: upload.error ?? "Could not upload photo." };
+  const { error } = await supabase.from("parties").update({ hero_image: upload.url }).eq("id", partyId);
+  if (error) return { error: error.message };
+  revalidatePath(`/app/parties/${partyId}`);
+  revalidatePath(`/app/parties/${partyId}/settings`);
+  revalidatePath(`/app/parties/${partyId}/invitation`);
+  return { error: null, url: upload.url };
+}
+
+
+export async function uploadInvitationPhoto(partyId: string, formData: FormData) {
+  const supabase = await createClient();
+  const file = formData.get("photo");
+  if (!(file instanceof File)) return { error: "Choose a photo." };
+  const upload = await uploadPartyImage(supabase, partyId, file);
+  if (upload.error || !upload.url) return { error: upload.error ?? "Could not upload photo." };
+  return { error: null, url: upload.url };
 }

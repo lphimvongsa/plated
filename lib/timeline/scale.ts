@@ -23,11 +23,18 @@ export type Axis = {
 export const VIEWPORT_HOURS = 12;
 /** Placement snaps to this resolution on the timeline. */
 export const SNAP_MINUTES = 5;
-export const VIEW_HOUR_OPTIONS = [1, 3, 6, 12] as const;
-
 /** Minor grid spacing inside each hour column, by zoom level. */
 export function gridTickMinutes(viewHours: number): number {
-  if (viewHours <= 1) return 10;
+  if (viewHours <= 1.25) return 5;
+  if (viewHours <= 3.5) return 10;
+  if (viewHours <= 6) return 15;
+  return 30;
+}
+
+/** Label cadence adapts independently from the smaller hash marks. */
+export function gridLabelMinutes(viewHours: number): number {
+  if (viewHours <= 1.25) return 10;
+  if (viewHours <= 3.5) return 30;
   if (viewHours <= 6) return 30;
   return 60;
 }
@@ -117,7 +124,7 @@ export function buildAxis({
   timeZone: string;
   pxPerHour: number;
 }): Axis {
-  const columnWidth = Math.max(48, pxPerHour);
+  const columnWidth = Math.max(24, pxPerHour);
   const dayLabel = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short" });
   const dateLabel = new Intl.DateTimeFormat("en-US", { timeZone, month: "short", day: "numeric" });
   const hourLabel = new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric" });

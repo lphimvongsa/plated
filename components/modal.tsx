@@ -4,7 +4,19 @@ import { X } from "lucide-react";
 import { ReactNode, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
-export function Modal({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  panelClassName = "",
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: ReactNode;
+  panelClassName?: string;
+}) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -33,7 +45,7 @@ export function Modal({ open, onClose, title, children }: { open: boolean; onClo
       aria-label={title}
       onMouseDown={(e) => e.currentTarget === e.target && onClose()}
     >
-      <div className="max-h-[92vh] w-full overflow-y-auto rounded-t-[2rem] border border-white/20 bg-paper p-5 shadow-paper md:max-w-2xl md:rounded-[2rem] md:p-7">
+      <div className={`max-h-[92vh] w-full overflow-y-auto rounded-t-[2rem] border border-white/20 bg-paper p-5 shadow-paper md:max-w-2xl md:rounded-[2rem] md:p-7 ${panelClassName}`}>
         <div className="mb-5 flex items-center justify-between gap-4">
           <h2 className="font-editorial text-3xl font-semibold">{title}</h2>
           <button className="btn-icon" onClick={onClose} aria-label="Close dialog">

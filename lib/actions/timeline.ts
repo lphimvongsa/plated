@@ -361,24 +361,54 @@ export async function moveTask(
   const supabase = await createClient();
   const patch: { helper_id?: string | null; assigned_name?: string | null; start_at?: string | null } = {};
 
+  let effectiveHelperId: string | null | undefined =
+    "helperId" in move ? (move.helperId ?? null) : undefined;
+
+  if (effectiveHelperId) {
+    const { data: helper } = await supabase
+      .from("party_helpers")
+      .select("id")
+      .eq("id", effectiveHelperId)
+      .eq("party_id", partyId)
+      .maybeSingle();
+    if (!helper) return { error: "That helper is not on this party." };
+  }
+
+  // A scheduled bar always belongs to a helper lane. If a caller schedules a
+  // task without also sending helperId, preserve its existing assignment but
+  // reject the write when none exists.
+  if ("startAt" in move && move.startAt && effectiveHelperId === undefined) {
+    const { data: task } = await supabase
+      .from("tasks")
+      .select("helper_id")
+      .eq("id", taskId)
+      .eq("party_id", partyId)
+      .maybeSingle();
+    effectiveHelperId = task?.helper_id ?? null;
+  }
+
+  if ("startAt" in move && move.startAt && !effectiveHelperId) {
+    return { error: "Assign this task to a helper before scheduling it." };
+  }
+
+  // Likewise, do not allow a scheduled task to become unassigned. The UI
+  // exposes an explicit remove-from-timeline action first.
+  if ("helperId" in move && effectiveHelperId === null && !("startAt" in move)) {
+    const { data: task } = await supabase
+      .from("tasks")
+      .select("start_at")
+      .eq("id", taskId)
+      .eq("party_id", partyId)
+      .maybeSingle();
+    if (task?.start_at) return { error: "Remove the task from the timeline before unassigning it." };
+  }
+
   if ("helperId" in move) {
-    const helperId = move.helperId ?? null;
-    if (helperId) {
-      const { data: helper } = await supabase
-        .from("party_helpers")
-        .select("id")
-        .eq("id", helperId)
-        .eq("party_id", partyId)
-        .maybeSingle();
-      if (!helper) return { error: "That helper is not on this party." };
-    }
-    patch.helper_id = helperId;
+    patch.helper_id = effectiveHelperId ?? null;
     patch.assigned_name = null;
   }
 
-  if ("startAt" in move) {
-    patch.start_at = move.startAt ?? null;
-  }
+  if ("startAt" in move) patch.start_at = move.startAt ?? null;
 
   const { error } = await supabase.from("tasks").update(patch).eq("id", taskId).eq("party_id", partyId);
   if (error) return { error: error.message };
@@ -401,7 +431,7 @@ export async function setTaskDuration(partyId: string, taskId: string, durationM
   return { error: null };
 }
 
-export async function addHelper(partyId: string, name: string) {
+export async function addHelper(partyId: string, name: string, color = "#C84A35") {
   const supabase = await createClient();
   const trimmed = name.trim();
   if (!trimmed) return { error: "Give the helper a name." };
@@ -415,13 +445,13 @@ export async function addHelper(partyId: string, name: string) {
     return { error: `${trimmed} already has a lane.` };
   }
 
-  const palette = ["tomato", "orange", "olive", "gold", "wine", "blush"];
+  const palette = ["#C84A35", "#E58262", "#73806A", "#D6A943", "#7E3943", "#795169"];
   const sortOrder = (existing ?? []).reduce((max, helper) => Math.max(max, helper.sort_order), -1) + 1;
 
   const { error } = await supabase.from("party_helpers").insert({
     party_id: partyId,
     name: trimmed,
-    color: palette[(existing?.length ?? 0) % palette.length],
+    color: /^#[0-9a-f]{6}$/i.test(color) ? color : palette[(existing?.length ?? 0) % palette.length],
     sort_order: sortOrder,
   });
   if (error) return { error: error.message };
@@ -451,7 +481,7 @@ export async function removeHelper(partyId: string, helperId: string) {
 
   await supabase
     .from("tasks")
-    .update({ helper_id: null, assigned_name: null })
+    .update({ helper_id: null, assigned_name: null, start_at: null })
     .eq("party_id", partyId)
     .eq("helper_id", helperId);
 
@@ -529,4 +559,23 @@ export async function autoScheduleTimeline(partyId: string) {
 
   revalidatePath(`/app/parties/${partyId}/timeline`);
   return { error: null, scheduled: pending.length };
+}
+
+export async function setHelperColor(partyId: string, helperId: string, color: string) {
+  const supabase = await createClient();
+  const value = /^#[0-9a-f]{6}$/i.test(color) ? color : "#C84A35";
+  const { error } = await supabase.from("party_helpers").update({ color: value }).eq("id", helperId).eq("party_id", partyId);
+  if (error) return { error: error.message };
+  revalidatePath(`/app/parties/${partyId}/timeline`);
+  return { error: null };
+}
+
+export async function setRecipeTimelineColor(partyId: string, recipeId: string, color: string) {
+  const supabase = await createClient();
+  const value = /^#[0-9a-f]{6}$/i.test(color) ? color : "#C84A35";
+  const { error } = await supabase.from("recipes").update({ color_hex: value }).eq("id", recipeId).eq("party_id", partyId);
+  if (error) return { error: error.message };
+  revalidatePath(`/app/parties/${partyId}/timeline`);
+  revalidatePath(`/app/parties/${partyId}/recipes`);
+  return { error: null };
 }

@@ -3,7 +3,8 @@
 import { deleteParty } from "@/lib/actions/parties";
 import { ArrowRight, Trash2 } from "lucide-react";
 import Link from "next/link";
-import Image from "next/image";
+import { CroppedImage } from "@/components/media/cropped-image";
+import { cropFromJson } from "@/lib/media/crop";
 import { useTransition } from "react";
 
 type PartyListItemProps = {
@@ -12,6 +13,7 @@ type PartyListItemProps = {
     name: string;
     location: string | null;
     hero_image: string | null;
+    cover_crop: unknown;
   };
   whenLabel: string;
   attending: number;
@@ -38,13 +40,11 @@ export function PartyListItem({
     <div className="group grid gap-5 border-b border-ink/15 py-6 md:grid-cols-[170px_1fr_auto] md:items-center">
       <Link href={`/app/parties/${party.id}`} className="contents">
         <div className={`relative h-28 overflow-hidden md:h-24 ${tense === "past" ? "opacity-70 grayscale" : ""}`}>
-          <Image
+          <CroppedImage
             src={party.hero_image || "/photos/party-01.webp"}
             alt=""
-            fill
-            sizes="(min-width: 768px) 170px, 100vw"
-            unoptimized={Boolean(party.hero_image?.startsWith("http"))}
-            className="object-cover transition duration-500 group-hover:scale-[1.03]"
+            crop={cropFromJson(party.cover_crop)}
+            className="h-full w-full transition duration-500 group-hover:scale-[1.03]"
           />
         </div>
 

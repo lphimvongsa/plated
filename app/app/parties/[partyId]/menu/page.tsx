@@ -1,17 +1,18 @@
 import { MenuBuilder } from "@/components/party/menu-builder";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthenticatedUserId } from "@/lib/supabase/auth";
 import { notFound } from "next/navigation";
+import { parseAllergyList } from "@/lib/rsvp";
+import { normalizeAllergenTag, allergenDisplayName } from "@/lib/allergens";
 
 export default async function MenuPage({ params }: { params: Promise<{ partyId: string }> }) {
   const { partyId } = await params;
   const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) notFound();
+  const userId = await getAuthenticatedUserId();
+  if (!userId) notFound();
 
-  const [{ data: party }, { data: cookbookRows }, { data: partyRecipeRows }, { data: menuItems }, { data: grocery }] = await Promise.all([
+  const [{ data: party }, { data: cookbookRows }, { data: partyRecipeRows }, { data: menuItems }, { data: grocery }, { data: guestRows }] = await Promise.all([
     supabase
       .from("parties")
       .select("id, service_style, planning_guest_count, shopping_dirty")
@@ -20,12 +21,12 @@ export default async function MenuPage({ params }: { params: Promise<{ partyId: 
     supabase
       .from("recipes")
       .select("id, title, course, image_url, servings")
-      .eq("owner_id", user.id)
+      .eq("owner_id", userId)
       .is("party_id", null)
       .order("updated_at", { ascending: false }),
     supabase
       .from("recipes")
-      .select("id, title, course, image_url, servings")
+      .select("id, title, course, image_url, prep_minutes, cook_minutes, allergy_notes, estimated_cost, servings")
       .eq("party_id", partyId)
       .order("updated_at", { ascending: false }),
     supabase
@@ -37,35 +38,40 @@ export default async function MenuPage({ params }: { params: Promise<{ partyId: 
       .from("grocery_items")
       .select("estimated_cost, already_owned")
       .eq("party_id", partyId),
+    supabase.from("guests").select("name,allergies,rsvp_status").eq("party_id", partyId).in("rsvp_status", ["attending", "maybe"]),
   ]);
   if (!party) notFound();
 
+
+  const partyRecipeIds = (partyRecipeRows ?? []).map((recipe) => recipe.id);
+  const { data: ingredientRows } = partyRecipeIds.length
+    ? await supabase.from("ingredients").select("recipe_id,name,allergen_tags").in("recipe_id", partyRecipeIds)
+    : { data: [] as Array<{ recipe_id: string; name: string; allergen_tags: string[] }> };
+  const guestAllergies = (guestRows ?? []).flatMap((guest) =>
+    parseAllergyList(guest.allergies).map((value) => ({ guest: guest.name, raw: value, normalized: normalizeAllergenTag(value) })),
+  );
+  const conflictsByRecipe = new Map<string, string[]>();
+  for (const ingredient of ingredientRows ?? []) {
+    const ingredientName = ingredient.name.toLowerCase();
+    const tags = (ingredient.allergen_tags ?? []).map(normalizeAllergenTag);
+    for (const allergy of guestAllergies) {
+      const raw = allergy.raw.toLowerCase();
+      const tagMatch = tags.includes(allergy.normalized);
+      const ingredientMatch = ingredientName === raw || ingredientName.includes(raw) || raw.includes(ingredientName);
+      if (!tagMatch && !ingredientMatch) continue;
+      const label = tagMatch ? allergenDisplayName(allergy.normalized) : ingredient.name;
+      const list = conflictsByRecipe.get(ingredient.recipe_id) ?? [];
+      const message = `${label} · ${allergy.guest}`;
+      if (!list.includes(message)) list.push(message);
+      conflictsByRecipe.set(ingredient.recipe_id, list);
+    }
+  }
+
   const menuRecipeIds = new Set((menuItems ?? []).map((item) => item.recipe_id));
-  const recipeIds = [...menuRecipeIds];
-
-  const { data: recipeRows } =
-    recipeIds.length > 0
-      ? await supabase
-          .from("recipes")
-          .select(
-            "id, title, course, image_url, prep_minutes, cook_minutes, allergy_notes, estimated_cost, servings",
-          )
-          .in("id", recipeIds)
-      : {
-          data: [] as Array<{
-            id: string;
-            title: string;
-            course: string | null;
-            image_url: string | null;
-            prep_minutes: number | null;
-            cook_minutes: number | null;
-            allergy_notes: string | null;
-            estimated_cost: number | null;
-            servings: number;
-          }>,
-        };
-
-  const recipeById = new Map((recipeRows ?? []).map((recipe) => [recipe.id, recipe]));
+  // `menu_items` always points at party-scoped recipe copies. We already
+  // fetched those recipes above, so reuse them instead of issuing a second,
+  // sequential recipe query for the menu subset.
+  const recipeById = new Map((partyRecipeRows ?? []).map((recipe) => [recipe.id, recipe]));
   const recipes = (menuItems ?? [])
     .map((item) => {
       const recipe = recipeById.get(item.recipe_id);
@@ -79,7 +85,7 @@ export default async function MenuPage({ params }: { params: Promise<{ partyId: 
         image_url: recipe.image_url,
         prep_minutes: recipe.prep_minutes,
         cook_minutes: recipe.cook_minutes,
-        allergy_notes: recipe.allergy_notes,
+        allergy_notes: conflictsByRecipe.get(recipe.id)?.join("; ") || recipe.allergy_notes,
         estimated_cost: recipe.estimated_cost,
         scaled_cost: scaledCost,
         servings: recipe.servings,

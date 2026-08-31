@@ -26,7 +26,7 @@
 * {
   box-sizing: border-box;
   scrollbar-width: thin;
-  scrollbar-color: rgba(200, 68, 50, 0.55) var(--paper-2);
+  scrollbar-color: rgb(var(--tomato-rgb) / 0.55) var(--paper-2);
 }
 
 html {
@@ -81,7 +81,7 @@ img {
 ::-webkit-scrollbar-thumb {
   border: 2px solid var(--paper-2);
   border-radius: 999px;
-  background: rgba(200, 68, 50, 0.55);
+  background: rgb(var(--tomato-rgb) / 0.55);
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -179,11 +179,11 @@ img {
   }
 
   .field {
-    @apply w-full rounded-[2px] border border-ink/25 bg-[#faf7f0] px-4 py-3 text-sm text-ink outline-none transition placeholder:text-ink/35 focus:border-tomato focus:bg-white focus:ring-2 focus:ring-tomato/10;
+    @apply w-full rounded-[2px] border border-ink/25 bg-paper px-4 py-3 text-sm text-ink outline-none transition placeholder:text-ink/35 focus:border-tomato focus:bg-white focus:ring-2 focus:ring-tomato/10;
   }
 
   .card {
-    @apply rounded-[3px] border border-ink/15 bg-[#f8f4ec] shadow-none;
+    @apply rounded-[3px] border border-ink/15 bg-paper-2 shadow-none;
   }
 
   .eyebrow {
@@ -195,7 +195,7 @@ img {
   }
 
   .editorial-panel {
-    @apply border border-ink/15 bg-[#f8f4ec];
+    @apply border border-ink/15 bg-paper-2;
   }
 
   .editorial-link {
@@ -245,6 +245,8 @@ img {
 /* StPageFlip / react-pageflip page chrome */
 .cookbook-flipbook {
   box-shadow: 0 18px 50px rgba(41, 35, 31, 0.18);
+  width: 100%;
+  height: 100%;
 }
 
 .cookbook-flipbook .book-page {
@@ -254,4 +256,65 @@ img {
 .cookbook-flipbook .stf__parent,
 .cookbook-flipbook .stf__wrapper {
   margin-inline: auto;
+}
+
+
+/* Party palettes swap through the same semantic tokens. Keep the change soft when
+   entering a different party rather than flashing a new palette. */
+.party-theme,
+.party-theme * {
+  transition-property: background-color, border-color, color, fill, stroke, box-shadow;
+  transition-duration: 450ms;
+  transition-timing-function: cubic-bezier(.2,.75,.25,1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .party-theme, .party-theme * { transition-duration: 0.01ms !important; }
+}
+
+/* Party palettes temporarily take over the complete authenticated shell. The
+   root class remains for one transition after leaving a party so returning to
+   Plated's default palette fades instead of flashing. */
+.global-party-theme,
+.global-party-theme body,
+.global-party-theme body * {
+  transition-property: background-color, border-color, color, fill, stroke, box-shadow;
+  transition-duration: 480ms;
+  transition-timing-function: cubic-bezier(.2,.75,.25,1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .global-party-theme,
+  .global-party-theme body,
+  .global-party-theme body * { transition-duration: 0.01ms !important; }
+}
+
+@keyframes cookbookFanOut {
+  from { opacity: 0.35; transform: translateX(var(--fan-shift, -72px)) rotate(-1.2deg); }
+  to { opacity: 1; transform: translateX(0) rotate(0deg); }
+}
+.cookbook-fan-page {
+  animation: cookbookFanOut 420ms cubic-bezier(.2,.78,.22,1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cookbook-fan-page { animation-duration: 0.01ms !important; animation-delay: 0ms !important; }
+}
+
+/* Mobile normalization: every authenticated page should stay inside the viewport. */
+html, body { max-width: 100%; overflow-x: hidden; }
+main, section, article, aside, nav, form, .card, .editorial-panel { min-width: 0; }
+input, textarea, select, video, canvas { max-width: 100%; }
+
+.receipt-source-card {
+  @apply flex min-h-48 flex-col items-center justify-center gap-3 rounded-[3px] border border-dashed border-ink/25 bg-paper-2 p-5 text-center text-ink transition hover:-translate-y-px hover:border-tomato hover:text-tomato hover:shadow-card disabled:opacity-50;
+}
+.receipt-camera { height: min(64vh, 620px); min-height: 360px; border-radius: 4px; }
+
+@media (max-width: 767px) {
+  .btn-primary, .btn-secondary { min-height: 42px; padding-inline: 0.9rem; font-size: 10px; }
+  .field { font-size: 16px; } /* prevent iOS input zoom */
+  .card, .editorial-panel { max-width: 100%; }
+  .timeline-shell { width: 100%; }
+  .receipt-camera { height: 58vh; min-height: 330px; }
+  h1, h2, h3 { overflow-wrap: anywhere; }
 }

@@ -1,8 +1,14 @@
-import { AddGuestForm, CopyInviteLink, InviteActions } from "@/components/party/guest-actions";
-import { formatRsvpStatus, initialsFromName } from "@/lib/rsvp";
+import { AddGuestForm, GuestActions } from "@/components/party/guest-actions";
+import { SendAllInvitesButton, SendInviteButton, type SendableGuest } from "@/components/party/send-invite";
+import { emailOutboundConfigured } from "@/lib/outbound/email";
+import { smsOutboundConfigured } from "@/lib/outbound/sms";
+import { formatAllergyList, formatRsvpStatus, hasAllergyList, initialsFromName } from "@/lib/rsvp";
 import { createClient } from "@/lib/supabase/server";
 import { AlertTriangle, Check, Users, X } from "lucide-react";
 import { notFound } from "next/navigation";
+
+const GUEST_COLS =
+  "min-w-[52rem] grid-cols-[minmax(0,1.7fr)_9.5rem_minmax(0,1fr)_3rem_5.75rem_2.5rem] items-center gap-x-3 px-5";
 
 export default async function GuestsPage({ params }: { params: Promise<{ partyId: string }> }) {
   const { partyId } = await params;
@@ -11,19 +17,35 @@ export default async function GuestsPage({ params }: { params: Promise<{ partyId
   const { data: party } = await supabase.from("parties").select("id, name").eq("id", partyId).maybeSingle();
   if (!party) notFound();
 
-  const [{ data: guestRows }, { data: inviteRows }] = await Promise.all([
-    supabase
-      .from("guests")
-      .select("id, name, email, rsvp_status, allergies, dietary_preference, plus_one_count")
-      .eq("party_id", partyId)
-      .order("created_at", { ascending: true }),
-    supabase.from("invites").select("id, guest_id, token, revoked_at").eq("party_id", partyId),
-  ]);
+  const guestsQuery = supabase
+    .from("guests")
+      .select("id, name, email, phone, rsvp_status, allergies, plus_one_count")
+    .eq("party_id", partyId)
+    .order("created_at", { ascending: true });
+  const invitesWithSend = await supabase
+    .from("invites")
+    .select("id, guest_id, token, revoked_at, last_sent_at, last_sent_channel")
+    .eq("party_id", partyId);
+  const inviteRows = invitesWithSend.error
+    ? (
+        await supabase.from("invites").select("id, guest_id, token, revoked_at").eq("party_id", partyId)
+      ).data?.map((invite) => ({ ...invite, last_sent_at: null, last_sent_channel: null }))
+    : invitesWithSend.data;
+  const { data: guestRows } = await guestsQuery;
 
-  const invitesByGuest = new Map<string, Array<{ id: string; token: string; revoked_at: string | null }>>();
+  const invitesByGuest = new Map<
+    string,
+    Array<{
+      id: string;
+      token: string;
+      revoked_at: string | null;
+      last_sent_at: string | null;
+      last_sent_channel: string | null;
+    }>
+  >();
   for (const invite of inviteRows ?? []) {
     const list = invitesByGuest.get(invite.guest_id) ?? [];
-    list.push({ id: invite.id, token: invite.token, revoked_at: invite.revoked_at });
+    list.push(invite);
     invitesByGuest.set(invite.guest_id, list);
   }
 
@@ -35,7 +57,21 @@ export default async function GuestsPage({ params }: { params: Promise<{ partyId
   const attending = guests.filter((g) => g.rsvp_status === "attending").length;
   const maybe = guests.filter((g) => g.rsvp_status === "maybe").length;
   const pending = guests.filter((g) => g.rsvp_status === "no_response").length;
-  const allergies = guests.filter((g) => g.allergies?.trim()).length;
+  const allergies = guests.filter((g) => hasAllergyList(g.allergies)).length;
+  const outbound = { email: emailOutboundConfigured(), sms: smsOutboundConfigured() };
+
+  const sendableGuests: SendableGuest[] = guests.map((guest) => {
+    const invite = guest.invites.find((row) => !row.revoked_at) ?? guest.invites[0] ?? null;
+    return {
+      id: guest.id,
+      name: guest.name,
+      email: guest.email,
+      phone: guest.phone,
+      invite,
+      lastSentAt: invite?.last_sent_at ?? null,
+      lastSentChannel: invite?.last_sent_channel ?? null,
+    };
+  });
 
   const firstActiveToken =
     guests.flatMap((guest) => guest.invites).find((invite) => !invite.revoked_at)?.token ?? null;
@@ -44,9 +80,12 @@ export default async function GuestsPage({ params }: { params: Promise<{ partyId
     <div className="space-y-8">
       <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <h2 className="font-editorial text-5xl font-semibold">Guests and Invitations</h2>
+          <h2 className="font-editorial text-5xl font-semibold">Guests</h2>
         </div>
-        <AddGuestForm partyId={partyId} />
+        <div className="flex flex-wrap items-center gap-2">
+          <SendAllInvitesButton partyId={partyId} guests={sendableGuests} outbound={outbound} />
+          <AddGuestForm partyId={partyId} outbound={outbound} />
+        </div>
       </section>
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <article className="card p-5">
@@ -67,59 +106,85 @@ export default async function GuestsPage({ params }: { params: Promise<{ partyId
         </article>
       </section>
       <section className="grid gap-6 lg:grid-cols-[1fr_300px]">
-        <div>
-          <div className="overflow-hidden rounded-[1.75rem] border border-ink/10 bg-[#f8f2e8] shadow-card">
-            <div className="hidden grid-cols-[1.1fr_8.75rem_.7fr_4.5rem_.9fr_auto] gap-4 border-b border-ink/10 px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-ink/40 md:grid">
+        <div className="min-w-0">
+          <div className="space-y-3 md:hidden">
+            {guests.length === 0 ? <p className="card p-5 text-sm text-ink/45">No guests yet. Add someone to email, text, or copy an invite link.</p> : guests.map((guest, i) => {
+              const status = formatRsvpStatus(guest.rsvp_status);
+              const allergyLabel = formatAllergyList(guest.allergies) || "None";
+              const sendable = sendableGuests[i];
+              return (
+                <article key={guest.id} className="card p-4">
+                  <div className="flex items-start gap-3">
+                    <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-full text-[10px] font-bold ${i % 4 === 0 ? "bg-blush" : i % 4 === 1 ? "bg-gold" : i % 4 === 2 ? "bg-olive text-paper" : "bg-orange text-paper"}`}>{initialsFromName(guest.name)}</div>
+                    <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{guest.name}</p><p className="mt-0.5 break-words text-xs text-ink/43">{[guest.email, guest.phone].filter(Boolean).join(" · ") || "No email or phone"}</p></div>
+                    <GuestActions guestId={guest.id} guestName={guest.name} partyId={partyId} />
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+                    <div className="rounded-[2px] border border-ink/10 bg-paper px-3 py-2"><span className="block text-[9px] font-bold uppercase tracking-widest text-ink/35">Status</span><span className="mt-1 block font-semibold">{status}</span></div>
+                    <div className="rounded-[2px] border border-ink/10 bg-paper px-3 py-2"><span className="block text-[9px] font-bold uppercase tracking-widest text-ink/35">Plus one</span><span className="mt-1 block font-semibold">{guest.plus_one_count > 0 ? "Yes" : "No"}</span></div>
+                    <div className="col-span-2 rounded-[2px] border border-ink/10 bg-paper px-3 py-2"><span className="block text-[9px] font-bold uppercase tracking-widest text-ink/35">Allergies</span><span className={`mt-1 flex items-center gap-1 font-semibold ${hasAllergyList(guest.allergies) ? "text-tomato" : "text-ink/45"}`}>{hasAllergyList(guest.allergies) ? <AlertTriangle size={12}/> : null}{allergyLabel}</span></div>
+                  </div>
+                  {sendable ? <div className="mt-3"><SendInviteButton partyId={partyId} guest={sendable} outbound={outbound} /></div> : null}
+                </article>
+              );
+            })}
+          </div>
+          <div className="hidden overflow-x-auto rounded-[1.75rem] border border-ink/10 bg-paper-2 shadow-card md:block">
+            <div className={`grid ${GUEST_COLS} border-b border-ink/10 py-3 text-[10px] font-bold uppercase tracking-widest text-ink/40`}>
               <span>Guest</span>
               <span>Status</span>
-              <span>Dietary</span>
-              <span>Plus one</span>
-              <span>Invite link</span>
-              <span className="text-right">Actions</span>
+              <span>Allergies</span>
+              <span className="text-center">Plus</span>
+              <span className="text-right">Send</span>
+              <span className="sr-only">Actions</span>
             </div>
             <div className="divide-y divide-ink/8">
               {guests.length === 0 ? (
-                <p className="p-6 text-sm text-ink/45">No guests yet. Add someone to generate an invite link.</p>
+                <p className="p-6 text-sm text-ink/45">No guests yet. Add someone to email, text, or copy an invite link.</p>
               ) : (
                 guests.map((guest, i) => {
                   const status = formatRsvpStatus(guest.rsvp_status);
-                  const invite = guest.invites.find((row) => !row.revoked_at) ?? guest.invites[0];
-                  const dietary = guest.allergies?.trim() || guest.dietary_preference?.trim() || "None";
-                  const hasAllergy = Boolean(guest.allergies?.trim());
+                  const allergyLabel = formatAllergyList(guest.allergies) || "None";
+                  const hasAllergy = hasAllergyList(guest.allergies);
                   const hasPlusOne = guest.plus_one_count > 0;
+                  const sendable = sendableGuests[i];
                   return (
                     <div
                       key={guest.id}
-                      className="grid gap-4 p-5 md:grid-cols-[1.1fr_8.75rem_.7fr_4.5rem_.9fr_auto] md:items-center"
+                      className={`grid ${GUEST_COLS} py-3.5`}
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex min-w-0 items-center gap-3">
                         <div
-                          className={`grid h-10 w-10 shrink-0 place-items-center rounded-full text-xs font-bold ${i % 4 === 0 ? "bg-blush" : i % 4 === 1 ? "bg-gold" : i % 4 === 2 ? "bg-olive text-paper" : "bg-orange text-paper"}`}
+                          className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-[10px] font-bold ${i % 4 === 0 ? "bg-blush" : i % 4 === 1 ? "bg-gold" : i % 4 === 2 ? "bg-olive text-paper" : "bg-orange text-paper"}`}
                         >
                           {initialsFromName(guest.name)}
                         </div>
                         <div className="min-w-0">
                           <p className="truncate text-sm font-semibold">{guest.name}</p>
-                          <p className="truncate text-xs text-ink/43">{guest.email || "No email"}</p>
+                          <p className="truncate text-xs text-ink/43">
+                            {[guest.email, guest.phone].filter(Boolean).join(" · ") || "No email or phone"}
+                          </p>
                         </div>
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <span
-                          className={`chip h-[29px] w-full justify-center ${status === "Attending" ? "border-olive/30 bg-olive/10 text-olive" : status === "Maybe" ? "border-gold/40 bg-gold/10" : status === "Not attending" ? "bg-ink/5 text-ink/40" : "border-tomato/20 bg-tomato/5 text-tomato"}`}
+                          className={`chip h-7 w-full max-w-full justify-center overflow-hidden ${status === "Attending" ? "border-olive/30 bg-olive/10 text-olive" : status === "Maybe" ? "border-gold/40 bg-gold/10" : status === "Not attending" ? "bg-ink/5 text-ink/40" : "border-tomato/20 bg-tomato/5 text-tomato"}`}
+                          title={status}
                         >
-                          {status}
+                          <span className="min-w-0 truncate">{status}</span>
                         </span>
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         {hasAllergy ? (
-                          <span className="inline-flex items-center gap-1 text-xs font-bold text-tomato">
-                            <AlertTriangle size={13} /> {dietary}
+                          <span className="flex min-w-0 items-center gap-1 text-xs font-bold text-tomato" title={allergyLabel}>
+                            <AlertTriangle size={13} className="shrink-0" />
+                            <span className="min-w-0 truncate">{allergyLabel}</span>
                           </span>
                         ) : (
-                          <span className="text-xs text-ink/40">{dietary}</span>
+                          <span className="block truncate text-xs text-ink/40">None</span>
                         )}
                       </div>
-                      <div className="flex items-center md:justify-center" aria-label={hasPlusOne ? "Plus one" : "No plus one"}>
+                      <div className="flex justify-center" aria-label={hasPlusOne ? "Plus one" : "No plus one"}>
                         {hasPlusOne ? (
                           <Check size={16} className="text-olive" strokeWidth={2.25} />
                         ) : (
@@ -127,23 +192,10 @@ export default async function GuestsPage({ params }: { params: Promise<{ partyId
                         )}
                       </div>
                       <div className="min-w-0">
-                        {invite && !invite.revoked_at ? (
-                          <div className="flex items-center gap-2">
-                            <code className="truncate text-[10px] text-ink/55">/invite/{invite.token.slice(0, 8)}…</code>
-                            <CopyInviteLink token={invite.token} />
-                          </div>
-                        ) : (
-                          <span className="text-xs text-ink/40">{invite?.revoked_at ? "Revoked" : "No invite"}</span>
-                        )}
+                        {sendable ? <SendInviteButton partyId={partyId} guest={sendable} outbound={outbound} /> : null}
                       </div>
-                      <div className="md:justify-self-end">
-                        {invite ? (
-                          <InviteActions
-                            inviteId={invite.id}
-                            partyId={partyId}
-                            revoked={Boolean(invite.revoked_at)}
-                          />
-                        ) : null}
+                      <div className="flex justify-end">
+                        <GuestActions guestId={guest.id} guestName={guest.name} partyId={partyId} />
                       </div>
                     </div>
                   );
@@ -161,7 +213,7 @@ export default async function GuestsPage({ params }: { params: Promise<{ partyId
               <p className="font-handwritten text-sm text-tomato">Invitation preview</p>
               <h3 className="mt-2 font-editorial text-3xl font-semibold">{party.name}</h3>
               <p className="mt-3 text-xs leading-relaxed text-ink/50">
-                Menu, dress code, guest contributions, allergies, and RSVP in one custom page.
+                Guests get the full invitation, RSVP, and a one-tap Add to Google Calendar action.
               </p>
               {firstActiveToken ? (
                 <a href={`/invite/${firstActiveToken}`} target="_blank" className="btn-secondary mt-5 w-full">

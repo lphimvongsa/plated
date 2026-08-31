@@ -66,6 +66,18 @@ export type Database = {
           dress_code: string | null;
           guest_contribution_notes: string | null;
           hero_image: string | null;
+          color_scheme: string;
+          cover_position: string;
+          cover_crop: Json | null;
+          invitation_headline: string | null;
+          invitation_message: string | null;
+          invitation_signoff: string | null;
+          invitation_rsvp_label: string | null;
+          invitation_photo_urls: string[];
+          invitation_photo_positions: string[];
+          invitation_photo_crops: Json;
+          invitation_menu_overrides: Json;
+          invitation_draft: boolean;
           planning_guest_count: number;
           shopping_dirty: boolean;
           shopping_refresh_token: string | null;
@@ -93,6 +105,18 @@ export type Database = {
           dress_code?: string | null;
           guest_contribution_notes?: string | null;
           hero_image?: string | null;
+          color_scheme?: string;
+          cover_position?: string;
+          cover_crop?: Json | null;
+          invitation_headline?: string | null;
+          invitation_message?: string | null;
+          invitation_signoff?: string | null;
+          invitation_rsvp_label?: string | null;
+          invitation_photo_urls?: string[];
+          invitation_photo_positions?: string[];
+          invitation_photo_crops?: Json;
+          invitation_menu_overrides?: Json;
+          invitation_draft?: boolean;
           planning_guest_count?: number;
           shopping_dirty?: boolean;
           shopping_refresh_token?: string | null;
@@ -116,6 +140,18 @@ export type Database = {
           dress_code?: string | null;
           guest_contribution_notes?: string | null;
           hero_image?: string | null;
+          color_scheme?: string;
+          cover_position?: string;
+          cover_crop?: Json | null;
+          invitation_headline?: string | null;
+          invitation_message?: string | null;
+          invitation_signoff?: string | null;
+          invitation_rsvp_label?: string | null;
+          invitation_photo_urls?: string[];
+          invitation_photo_positions?: string[];
+          invitation_photo_crops?: Json;
+          invitation_menu_overrides?: Json;
+          invitation_draft?: boolean;
           planning_guest_count?: number;
           shopping_dirty?: boolean;
           shopping_refresh_token?: string | null;
@@ -185,6 +221,8 @@ export type Database = {
           title: string;
           description: string | null;
           image_url: string | null;
+          color_hex: string | null;
+          cover_text_color: string;
           source_url: string | null;
           servings: number;
           prep_minutes: number | null;
@@ -218,6 +256,8 @@ export type Database = {
           title: string;
           description?: string | null;
           image_url?: string | null;
+          color_hex?: string | null;
+          cover_text_color?: string;
           source_url?: string | null;
           servings?: number;
           prep_minutes?: number | null;
@@ -245,6 +285,8 @@ export type Database = {
           title?: string;
           description?: string | null;
           image_url?: string | null;
+          color_hex?: string | null;
+          cover_text_color?: string;
           source_url?: string | null;
           servings?: number;
           prep_minutes?: number | null;
@@ -488,6 +530,8 @@ export type Database = {
           created_at: string;
           revoked_at: string | null;
           last_opened_at: string | null;
+          last_sent_at: string | null;
+          last_sent_channel: string | null;
         };
         Insert: {
           id?: string;
@@ -496,11 +540,51 @@ export type Database = {
           token?: string;
           revoked_at?: string | null;
           last_opened_at?: string | null;
+          last_sent_at?: string | null;
+          last_sent_channel?: string | null;
         };
         Update: {
           token?: string;
           revoked_at?: string | null;
           last_opened_at?: string | null;
+          last_sent_at?: string | null;
+          last_sent_channel?: string | null;
+        };
+        Relationships: [];
+      };
+      invite_deliveries: {
+        Row: {
+          id: string;
+          party_id: string;
+          invite_id: string;
+          guest_id: string;
+          channel: string;
+          recipient: string;
+          status: string;
+          provider: string | null;
+          provider_message_id: string | null;
+          error: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          party_id: string;
+          invite_id: string;
+          guest_id: string;
+          channel: string;
+          recipient: string;
+          status: string;
+          provider?: string | null;
+          provider_message_id?: string | null;
+          error?: string | null;
+        };
+        Update: {
+          channel?: string;
+          recipient?: string;
+          status?: string;
+          provider?: string | null;
+          provider_message_id?: string | null;
+          error?: string | null;
         };
         Relationships: [];
       };
@@ -553,6 +637,39 @@ export type Database = {
           estimated_cost?: number | null;
           actual_cost?: number | null;
           sort_order?: number;
+        };
+        Relationships: [];
+      };
+      receipts: {
+        Row: {
+          id: string;
+          party_id: string;
+          uploaded_by: string | null;
+          store_name: string | null;
+          purchased_at: string | null;
+          subtotal: number | null;
+          tax: number | null;
+          total: number | null;
+          image_path: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string; party_id: string; uploaded_by?: string | null; store_name?: string | null; purchased_at?: string | null; subtotal?: number | null; tax?: number | null; total?: number | null; image_path?: string | null; created_at?: string;
+        };
+        Update: {
+          store_name?: string | null; purchased_at?: string | null; subtotal?: number | null; tax?: number | null; total?: number | null; image_path?: string | null;
+        };
+        Relationships: [];
+      };
+      receipt_items: {
+        Row: {
+          id: string; receipt_id: string; grocery_item_id: string | null; raw_name: string; normalized_name: string | null; quantity: number | null; line_total: number; match_confidence: number | null; purchased: boolean; created_at: string;
+        };
+        Insert: {
+          id?: string; receipt_id: string; grocery_item_id?: string | null; raw_name: string; normalized_name?: string | null; quantity?: number | null; line_total?: number; match_confidence?: number | null; purchased?: boolean; created_at?: string;
+        };
+        Update: {
+          grocery_item_id?: string | null; raw_name?: string; normalized_name?: string | null; quantity?: number | null; line_total?: number; match_confidence?: number | null; purchased?: boolean;
         };
         Relationships: [];
       };
@@ -695,6 +812,16 @@ export type InvitePayload = {
     dress_code: string | null;
     guest_contribution_notes: string | null;
     hero_image: string | null;
+    color_scheme: string;
+    cover_position: string;
+    cover_crop: Json | null;
+    invitation_headline: string | null;
+    invitation_message: string | null;
+    invitation_signoff: string | null;
+    invitation_rsvp_label: string | null;
+    invitation_photo_urls: string[];
+    invitation_photo_positions: string[];
+    invitation_photo_crops: Json;
   };
   guest?: {
     id: string;
@@ -707,8 +834,15 @@ export type InvitePayload = {
     notes: string | null;
   };
   menu?: Array<{
+    id?: string;
     course: string | null;
     title: string;
     description: string | null;
+  }>;
+  allergy_options?: Array<{
+    kind: "allergen" | "ingredient";
+    value: string;
+    label: string;
+    allergens: string[];
   }>;
 };

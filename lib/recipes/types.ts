@@ -2,6 +2,8 @@ export type RecipeFields = {
   title: string;
   description?: string | null;
   image_url?: string | null;
+  color_hex?: string | null;
+  cover_text_color?: string;
   source_url?: string | null;
   servings?: number;
   prep_minutes?: number | null;
