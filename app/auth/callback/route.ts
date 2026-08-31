@@ -1,10 +1,18 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+function safeNextPath(value: string | null) {
+  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) {
+    return "/app";
+  }
+  return value;
+}
+
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/app";
+  const next = safeNextPath(searchParams.get("next"));
+  const oauthError = searchParams.get("error_description") ?? searchParams.get("error");
 
   if (code) {
     const supabase = await createClient();
@@ -25,7 +33,13 @@ export async function GET(request: Request) {
         return NextResponse.redirect(`${origin}${destination}`);
       }
     }
+
+    const login = new URL("/auth/login", origin);
+    login.searchParams.set("error", error?.message ?? "auth");
+    return NextResponse.redirect(login);
   }
 
-  return NextResponse.redirect(`${origin}/auth/login?error=auth`);
+  const login = new URL("/auth/login", origin);
+  login.searchParams.set("error", oauthError || "auth");
+  return NextResponse.redirect(login);
 }

@@ -42,7 +42,8 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (userId && isAuthRoute && path !== "/auth/callback") {
+  const isOAuthHandshake = path === "/auth/callback" || path === "/auth/google";
+  if (userId && isAuthRoute && !isOAuthHandshake) {
     const url = request.nextUrl.clone();
     url.pathname = "/app";
     return NextResponse.redirect(url);

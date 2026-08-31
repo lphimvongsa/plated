@@ -59,24 +59,6 @@ export async function signInWithEmail(formData: FormData) {
   redirect(profile?.onboarding_complete ? "/app" : "/onboarding");
 }
 
-export async function signInWithGoogle() {
-  const supabase = await createClient();
-  const origin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: "google",
-    options: {
-      redirectTo: `${origin}/auth/callback`,
-    },
-  });
-
-  if (error || !data.url) {
-    return { error: error?.message ?? "Unable to start Google sign-in." };
-  }
-
-  redirect(data.url);
-}
-
 export async function signOut() {
   const supabase = await createClient();
   await supabase.auth.signOut();

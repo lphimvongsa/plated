@@ -1,15 +1,26 @@
 "use client";
 
 import { Brand } from "@/components/brand";
-import { signInWithEmail, signInWithGoogle, signUpWithEmail } from "@/lib/actions/auth";
+import { signInWithEmail, signUpWithEmail } from "@/lib/actions/auth";
 import { ArrowRight, Eye, EyeOff, Mail } from "lucide-react";
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useState, useTransition } from "react";
 
-export default function LoginPage() {
+function oauthErrorMessage(code: string | null) {
+  if (!code) return null;
+  if (code === "auth") return "Sign-in didn’t complete. Please try again.";
+  if (code === "google" || code === "google-disabled") {
+    return "Google sign-in isn’t enabled yet. Enable the Google provider in the Supabase dashboard, then try again.";
+  }
+  return code;
+}
+
+function LoginForm() {
+  const searchParams = useSearchParams();
   const [showPassword, setShowPassword] = useState(false);
   const [mode, setMode] = useState<"login" | "signup">("signup");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(oauthErrorMessage(searchParams.get("error")));
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -47,20 +58,13 @@ export default function LoginPage() {
               : "Sign in to return to your menus, guests, and timelines."}
           </p>
 
-          <button
-            className="btn-secondary mt-8 w-full justify-between bg-[#faf7f0]"
-            disabled={pending}
-            onClick={() => {
-              setError(null);
-              startTransition(async () => {
-                const result = await signInWithGoogle();
-                if (result?.error) setError(result.error);
-              });
-            }}
-          >
+          <a href="/auth/google" className="btn-secondary mt-8 w-full justify-between bg-[#faf7f0]">
             <span className="inline-flex items-center gap-3"><span className="text-sm font-bold text-[#4285F4]">G</span> Continue with Google</span>
             <ArrowRight size={14} />
-          </button>
+          </a>
+
+          {error ? <p className="mt-4 text-sm text-tomato">{error}</p> : null}
+          {message ? <p className="mt-4 text-sm text-olive">{message}</p> : null}
 
           <div className="my-6 flex items-center gap-3 text-[8px] font-bold uppercase tracking-[0.16em] text-ink/35">
             <span className="h-px flex-1 bg-ink/15" />
@@ -120,9 +124,6 @@ export default function LoginPage() {
               </div>
             </label>
 
-            {error ? <p className="text-sm text-tomato">{error}</p> : null}
-            {message ? <p className="text-sm text-olive">{message}</p> : null}
-
             <button className="btn-primary mt-2 w-full justify-between" type="submit" disabled={pending}>
               {pending ? "Working…" : mode === "signup" ? "Create account" : "Sign in"} <ArrowRight size={15} />
             </button>
@@ -148,5 +149,19 @@ export default function LoginPage() {
         </p>
       </section>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="paper-noise grid min-h-screen place-items-center bg-paper">
+          <p className="text-sm text-ink/45">Loading…</p>
+        </main>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }

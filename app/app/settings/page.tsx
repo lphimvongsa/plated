@@ -6,6 +6,7 @@ import {
   setCookbookViewMode,
   type CookbookViewMode,
 } from "@/lib/recipes/cookbook-view-preference";
+import { signOut } from "@/lib/actions/auth";
 import { Bell, BookOpen, ChefHat, LayoutGrid, LogOut, Ruler, Save, Shield, UserRound } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState, Suspense } from "react";
@@ -182,9 +183,11 @@ function AccountSettingsInner() {
 
             <article className="rounded-[1.75rem] border border-tomato/20 bg-tomato/5 p-6">
               <h2 className="font-editorial text-2xl font-semibold text-tomato">Account actions</h2>
-              <button type="button" className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-tomato">
-                <LogOut size={15} /> Sign out
-              </button>
+              <form action={signOut}>
+                <button type="submit" className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-tomato">
+                  <LogOut size={15} /> Sign out
+                </button>
+              </form>
             </article>
           </div>
         </div>
