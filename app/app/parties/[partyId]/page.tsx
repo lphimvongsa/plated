@@ -15,25 +15,17 @@ export default async function PartyOverviewPage({ params }: { params: Promise<{ 
   const { data: party } = await supabase.from("parties").select("*").eq("id", partyId).maybeSingle();
   if (!party) notFound();
 
-  const [{ data: guests }, { data: recipes }, { data: grocery }, { data: invite }] = await Promise.all([
+  const [{ data: guests }, { data: recipes }, { data: grocery }] = await Promise.all([
     supabase.from("guests").select("id, name, rsvp_status, allergies, plus_one_count").eq("party_id", partyId),
     supabase.from("recipes").select("id, allergy_notes").eq("party_id", partyId),
     supabase
       .from("grocery_items")
       .select("estimated_cost, already_owned")
       .eq("party_id", partyId),
-    supabase
-      .from("invites")
-      .select("token")
-      .eq("party_id", partyId)
-      .is("revoked_at", null)
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle(),
   ]);
 
-  const previewToken = invite?.token ?? null;
-  const previewHref = previewToken ? `/invite/${previewToken}` : `${base}/guests`;
+  const previewToken = party.share_token;
+  const previewHref = `/invite/${previewToken}`;
 
   const guestList = guests ?? [];
   const attending = guestList.filter((g) => g.rsvp_status === "attending").length;
@@ -283,7 +275,7 @@ export default async function PartyOverviewPage({ params }: { params: Promise<{ 
           </p>
           <Link
             href={previewHref}
-            target={previewToken ? "_blank" : undefined}
+            target="_blank"
             className="btn-secondary mt-7 w-full sm:w-auto sm:self-start"
           >
             Preview invitation

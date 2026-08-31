@@ -1,14 +1,26 @@
 import { InviteExperience } from "@/components/invite/invite-experience";
 import { loadInvite } from "@/lib/actions/invite";
 import { Brand } from "@/components/brand";
-import { siteUrl } from "@/lib/site";
+import { shareRsvpCookieName, siteUrl } from "@/lib/site";
+import { cookies } from "next/headers";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 export default async function InvitePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const invite = await loadInvite(token);
 
-  if (invite.status === "revoked" || !invite.party || !invite.guest) {
+  if (invite.kind === "share") {
+    const personal = (await cookies()).get(shareRsvpCookieName(token))?.value;
+    if (personal && personal !== token) {
+      const existing = await loadInvite(personal);
+      if (existing.party && existing.guest?.id && existing.status !== "revoked") {
+        redirect(`/invite/${personal}`);
+      }
+    }
+  }
+
+  if (invite.status === "revoked" || !invite.party) {
     return (
       <main className="paper-noise flex min-h-screen flex-col items-center justify-center bg-[#eee4d4] px-5 text-center text-ink">
         <Brand compact />

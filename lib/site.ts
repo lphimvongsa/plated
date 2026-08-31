@@ -7,6 +7,10 @@ export function invitePageUrl(token: string, origin?: string) {
   return `${base}/invite/${token}`;
 }
 
+export function shareRsvpCookieName(shareToken: string) {
+  return `plated_share_${shareToken}`;
+}
+
 export function inviteCalendarUrl(token: string, origin?: string) {
   return `${invitePageUrl(token, origin)}/calendar`;
 }

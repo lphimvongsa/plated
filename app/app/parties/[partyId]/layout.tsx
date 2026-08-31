@@ -13,24 +13,16 @@ export default async function PartyLayout({
   const { partyId } = await params;
   const supabase = await createClient();
 
-  const [{ data: party }, { data: members }, { data: invite }] = await Promise.all([
+  const [{ data: party }, { data: members }] = await Promise.all([
     supabase
       .from("parties")
-      .select("id, name, starts_at, timezone, status, color_scheme")
+      .select("id, name, starts_at, timezone, status, color_scheme, share_token")
       .eq("id", partyId)
       .maybeSingle(),
     supabase
       .from("party_members")
       .select("user_id, role")
       .eq("party_id", partyId),
-    supabase
-      .from("invites")
-      .select("token")
-      .eq("party_id", partyId)
-      .is("revoked_at", null)
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle(),
   ]);
   if (!party) notFound();
 
@@ -56,7 +48,7 @@ export default async function PartyLayout({
         color_scheme: party.color_scheme,
       }}
       collaborators={collaborators}
-      previewToken={invite?.token ?? null}
+      previewToken={party.share_token}
     >
       {children}
     </PartyShell>

@@ -1,6 +1,8 @@
 "use server";
 
+import { cookies } from "next/headers";
 import type { InvitePayload } from "@/lib/database.types";
+import { shareRsvpCookieName } from "@/lib/site";
 import { createClient } from "@/lib/supabase/server";
 
 export async function loadInvite(token: string): Promise<InvitePayload> {
@@ -35,5 +37,16 @@ export async function submitRsvp(input: {
     return { status: "revoked", ok: false, error: error?.message ?? "failed" };
   }
 
-  return data as InvitePayload;
+  const payload = data as InvitePayload;
+  if (payload.personal_token && payload.personal_token !== input.token) {
+    const cookieStore = await cookies();
+    cookieStore.set(shareRsvpCookieName(input.token), payload.personal_token, {
+      httpOnly: true,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 400,
+    });
+  }
+
+  return payload;
 }

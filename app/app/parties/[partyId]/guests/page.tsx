@@ -1,4 +1,5 @@
 import { AddGuestForm, GuestActions } from "@/components/party/guest-actions";
+import { CopyShareLinkButton, ShareInviteCard } from "@/components/party/share-invite-link";
 import { SendAllInvitesButton, SendInviteButton, type SendableGuest } from "@/components/party/send-invite";
 import { emailOutboundConfigured } from "@/lib/outbound/email";
 import { smsOutboundConfigured } from "@/lib/outbound/sms";
@@ -14,12 +15,12 @@ export default async function GuestsPage({ params }: { params: Promise<{ partyId
   const { partyId } = await params;
   const supabase = await createClient();
 
-  const { data: party } = await supabase.from("parties").select("id, name").eq("id", partyId).maybeSingle();
+  const { data: party } = await supabase.from("parties").select("id, name, share_token").eq("id", partyId).maybeSingle();
   if (!party) notFound();
 
   const guestsQuery = supabase
     .from("guests")
-      .select("id, name, email, phone, rsvp_status, allergies, plus_one_count")
+      .select("id, name, email, phone, rsvp_status, allergies, plus_one_count, source")
     .eq("party_id", partyId)
     .order("created_at", { ascending: true });
   const invitesWithSend = await supabase
@@ -73,8 +74,7 @@ export default async function GuestsPage({ params }: { params: Promise<{ partyId
     };
   });
 
-  const firstActiveToken =
-    guests.flatMap((guest) => guest.invites).find((invite) => !invite.revoked_at)?.token ?? null;
+  const firstActiveToken = party.share_token;
 
   return (
     <div className="space-y-8">
@@ -83,7 +83,8 @@ export default async function GuestsPage({ params }: { params: Promise<{ partyId
           <h2 className="font-editorial text-5xl font-semibold">Guests</h2>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <SendAllInvitesButton partyId={partyId} guests={sendableGuests} outbound={outbound} />
+          <CopyShareLinkButton token={party.share_token} />
+          <SendAllInvitesButton partyId={partyId} guests={sendableGuests} outbound={outbound} shareToken={party.share_token} />
           <AddGuestForm partyId={partyId} outbound={outbound} />
         </div>
       </section>
@@ -108,7 +109,7 @@ export default async function GuestsPage({ params }: { params: Promise<{ partyId
       <section className="grid gap-6 lg:grid-cols-[1fr_300px]">
         <div className="min-w-0">
           <div className="space-y-3 md:hidden">
-            {guests.length === 0 ? <p className="card p-5 text-sm text-ink/45">No guests yet. Add someone to email, text, or copy an invite link.</p> : guests.map((guest, i) => {
+            {guests.length === 0 ? <p className="card p-5 text-sm text-ink/45">No named guests yet. Copy the party link for a group chat, or add someone to email or text them privately.</p> : guests.map((guest, i) => {
               const status = formatRsvpStatus(guest.rsvp_status);
               const allergyLabel = formatAllergyList(guest.allergies) || "None";
               const sendable = sendableGuests[i];
@@ -116,7 +117,7 @@ export default async function GuestsPage({ params }: { params: Promise<{ partyId
                 <article key={guest.id} className="card p-4">
                   <div className="flex items-start gap-3">
                     <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-full text-[10px] font-bold ${i % 4 === 0 ? "bg-blush" : i % 4 === 1 ? "bg-gold" : i % 4 === 2 ? "bg-olive text-paper" : "bg-orange text-paper"}`}>{initialsFromName(guest.name)}</div>
-                    <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{guest.name}</p><p className="mt-0.5 break-words text-xs text-ink/43">{[guest.email, guest.phone].filter(Boolean).join(" · ") || "No email or phone"}</p></div>
+                    <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{guest.name}</p><p className="mt-0.5 break-words text-xs text-ink/43">{[guest.email, guest.phone].filter(Boolean).join(" · ") || (guest.source === "share" ? "Joined from party link" : "No email or phone")}</p></div>
                     <GuestActions guestId={guest.id} guestName={guest.name} partyId={partyId} />
                   </div>
                   <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
@@ -140,7 +141,7 @@ export default async function GuestsPage({ params }: { params: Promise<{ partyId
             </div>
             <div className="divide-y divide-ink/8">
               {guests.length === 0 ? (
-                <p className="p-6 text-sm text-ink/45">No guests yet. Add someone to email, text, or copy an invite link.</p>
+                <p className="p-6 text-sm text-ink/45">No named guests yet. Copy the party link for a group chat, or add someone to email or text them privately.</p>
               ) : (
                 guests.map((guest, i) => {
                   const status = formatRsvpStatus(guest.rsvp_status);
@@ -162,7 +163,7 @@ export default async function GuestsPage({ params }: { params: Promise<{ partyId
                         <div className="min-w-0">
                           <p className="truncate text-sm font-semibold">{guest.name}</p>
                           <p className="truncate text-xs text-ink/43">
-                            {[guest.email, guest.phone].filter(Boolean).join(" · ") || "No email or phone"}
+                            {[guest.email, guest.phone].filter(Boolean).join(" · ") || (guest.source === "share" ? "Joined from party link" : "No email or phone")}
                           </p>
                         </div>
                       </div>
@@ -205,6 +206,7 @@ export default async function GuestsPage({ params }: { params: Promise<{ partyId
           </div>
         </div>
         <aside className="space-y-4">
+          <ShareInviteCard partyId={partyId} token={party.share_token} />
           <article className="card overflow-hidden">
             <div className="h-48">
               <img src="/photos/party-07.webp" alt="Outdoor dinner invitation image" className="h-full w-full object-cover" />
@@ -215,13 +217,9 @@ export default async function GuestsPage({ params }: { params: Promise<{ partyId
               <p className="mt-3 text-xs leading-relaxed text-ink/50">
                 Guests get the full invitation, RSVP, and a one-tap Add to Google Calendar action.
               </p>
-              {firstActiveToken ? (
-                <a href={`/invite/${firstActiveToken}`} target="_blank" className="btn-secondary mt-5 w-full">
-                  Open preview
-                </a>
-              ) : (
-                <p className="mt-5 text-xs text-ink/45">Add a guest to generate a preview link.</p>
-              )}
+              <a href={`/invite/${firstActiveToken}`} target="_blank" className="btn-secondary mt-5 w-full">
+                Open preview
+              </a>
             </div>
           </article>
           <article className="rounded-[1.75rem] bg-ink p-5 text-paper">

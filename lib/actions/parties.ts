@@ -276,6 +276,22 @@ export async function regenerateInvite(inviteId: string, partyId: string) {
   return { error: null, token };
 }
 
+export async function rotateShareToken(partyId: string) {
+  const supabase = await createClient();
+  const token = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+  const { data, error } = await supabase
+    .from("parties")
+    .update({ share_token: token })
+    .eq("id", partyId)
+    .select("share_token")
+    .single();
+  if (error || !data) return { error: error?.message ?? "Could not reset the party link.", token: null };
+  revalidatePath(`/app/parties/${partyId}`, "layout");
+  revalidatePath(`/app/parties/${partyId}/guests`);
+  revalidatePath(`/app/parties/${partyId}/invitation`);
+  return { error: null, token: data.share_token };
+}
+
 export async function deleteGuest(guestId: string, partyId: string) {
   const supabase = await createClient();
   const { error } = await supabase.from("guests").delete().eq("id", guestId).eq("party_id", partyId);

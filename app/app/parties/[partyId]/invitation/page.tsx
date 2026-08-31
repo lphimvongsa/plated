@@ -9,7 +9,7 @@ export default async function InvitationEditorPage({ params }: { params: Promise
   const [{ data: party }, { data: menuRows }] = await Promise.all([
     supabase
       .from("parties")
-      .select("id,name,starts_at,ends_at,timezone,location,color_scheme,hero_image,cover_crop,dress_code,guest_contribution_notes,invitation_headline,invitation_message,invitation_signoff,invitation_rsvp_label,invitation_photo_urls,invitation_photo_positions,invitation_photo_crops,invitation_menu_overrides")
+      .select("id,name,starts_at,ends_at,timezone,location,color_scheme,hero_image,cover_crop,dress_code,guest_contribution_notes,invitation_headline,invitation_message,invitation_signoff,invitation_rsvp_label,invitation_photo_urls,invitation_photo_positions,invitation_photo_crops,invitation_menu_overrides,share_token")
       .eq("id", partyId)
       .maybeSingle(),
     supabase
@@ -51,6 +51,7 @@ export default async function InvitationEditorPage({ params }: { params: Promise
         time: toTimeInputValue(party.starts_at, party.timezone),
       }}
       menu={menu}
+      shareToken={party.share_token}
     />
   );
 }

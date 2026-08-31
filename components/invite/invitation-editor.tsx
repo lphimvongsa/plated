@@ -2,6 +2,7 @@
 
 import { CropEditor } from "@/components/media/crop-editor";
 import { CroppedImage } from "@/components/media/cropped-image";
+import { CopyShareLinkButton } from "@/components/party/share-invite-link";
 import { updateInvitationDraft, uploadInvitationPhoto } from "@/lib/actions/parties";
 import { googleCalendarUrl } from "@/lib/calendar";
 import { compressImageForUpload } from "@/lib/media/compress";
@@ -45,7 +46,7 @@ type PartyDraft = {
   invitation_photo_crops: unknown;
 };
 
-export function InvitationEditor({ party, menu }: { party: PartyDraft; menu: InvitationMenuItem[] }) {
+export function InvitationEditor({ party, menu, shareToken }: { party: PartyDraft; menu: InvitationMenuItem[]; shareToken: string }) {
   const [scheme, setScheme] = useState(party.color_scheme || PARTY_THEMES[0].key);
   const theme = useMemo(() => partyThemeByKey(scheme), [scheme]);
   const [headline, setHeadline] = useState(party.invitation_headline || party.name);
@@ -160,6 +161,7 @@ export function InvitationEditor({ party, menu }: { party: PartyDraft; menu: Inv
             <Save size={15} />
             {pending ? "Saving…" : "Save draft"}
           </button>
+          <CopyShareLinkButton token={shareToken} />
           <Link href={`/app/parties/${party.id}/guests`} className="btn-secondary">
             <Send size={15} /> Send invitations
           </Link>

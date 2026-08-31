@@ -28,7 +28,19 @@ type Props = {
   origin: string;
 };
 
+const emptyGuest = {
+  id: "",
+  name: "",
+  email: null as string | null,
+  rsvp_status: "no_response",
+  allergies: null as string | null,
+  dietary_preference: null as string | null,
+  plus_one_count: 0,
+  notes: null as string | null,
+};
+
 export function InviteExperience({ token, initial, origin }: Props) {
+  const [activeToken, setActiveToken] = useState(token);
   const [invite, setInvite] = useState(initial);
   const [submitted, setSubmitted] = useState(
     Boolean(initial.guest && initial.guest.rsvp_status !== "no_response"),
@@ -37,7 +49,7 @@ export function InviteExperience({ token, initial, origin }: Props) {
   const [pending, startTransition] = useTransition();
 
   const party = invite.party!;
-  const guest = invite.guest!;
+  const guest = invite.guest ?? emptyGuest;
   const softExpired = invite.status === "soft_expired";
   const { date, time } = formatPartyWhen(party.starts_at, party.timezone);
   const photos = party.invitation_photo_urls?.length ? party.invitation_photo_urls : [party.hero_image || "/photos/party-01.webp"];
@@ -71,13 +83,13 @@ export function InviteExperience({ token, initial, origin }: Props) {
           invitationMessage: party.invitation_message,
           invitationHeadline: party.invitation_headline,
         },
-        `${origin.replace(/\/$/, "")}/invite/${token}`,
+        `${origin.replace(/\/$/, "")}/invite/${activeToken}`,
       ),
-    [party, token, origin],
+    [party, activeToken, origin],
   );
 
   const gcal = googleCalendarUrl(calendarEvent);
-  const icsHref = `/invite/${token}/calendar`;
+  const icsHref = `/invite/${activeToken}/calendar`;
   const allergyOptions = useMemo(() => {
     const fromMenu = initial.allergy_options ?? [];
     const canonical = MAJOR_ALLERGENS.map((tag) => ({ kind: "allergen" as const, value: tag, label: allergenDisplayName(tag), allergens: [tag] }));
@@ -112,7 +124,7 @@ export function InviteExperience({ token, initial, origin }: Props) {
     setError(null);
     startTransition(async () => {
       const result = await submitRsvp({
-        token,
+        token: activeToken,
         name,
         rsvpStatus: rsvp,
         allergies: serializeAllergyList(allergies),
@@ -120,9 +132,21 @@ export function InviteExperience({ token, initial, origin }: Props) {
         notes,
       });
       if (!result.ok) {
-        setError(result.error === "soft_expired" ? "This dinner has passed — RSVPs are closed." : "Could not save your RSVP.");
+        setError(
+          result.error === "soft_expired"
+            ? "This dinner has passed — RSVPs are closed."
+            : result.error === "name_required"
+              ? "Add your name so the hosts know who you are."
+              : result.error === "guest_limit"
+                ? "This dinner is at capacity. Ask your host."
+                : "Could not save your RSVP.",
+        );
         if (result.status === "soft_expired") setInvite(result);
         return;
+      }
+      if (result.personal_token && result.personal_token !== activeToken) {
+        window.history.replaceState(null, "", `/invite/${result.personal_token}`);
+        setActiveToken(result.personal_token);
       }
       setInvite(result);
       setSubmitted(true);
@@ -362,7 +386,7 @@ export function InviteExperience({ token, initial, origin }: Props) {
                 <p className="mt-7 font-handwritten text-xl text-tomato">You’re on the list.</p>
                 <h3 className="mt-2 font-editorial text-5xl font-semibold">See you at sunset.</h3>
                 <p className="mt-4 max-w-md text-sm leading-relaxed text-ink/55">
-                  Your RSVP is saved. Reopen this same link anytime to check the dinner details or update your response.
+                  Your RSVP is saved. Bookmark this page to check the dinner details or update your response.
                 </p>
                 <div className="mt-7 flex flex-wrap justify-center gap-3">
                   <a href={gcal} target="_blank" rel="noreferrer" className="btn-secondary">

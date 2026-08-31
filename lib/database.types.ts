@@ -78,6 +78,7 @@ export type Database = {
           invitation_photo_crops: Json;
           invitation_menu_overrides: Json;
           invitation_draft: boolean;
+          share_token: string;
           planning_guest_count: number;
           shopping_dirty: boolean;
           shopping_refresh_token: string | null;
@@ -117,6 +118,7 @@ export type Database = {
           invitation_photo_crops?: Json;
           invitation_menu_overrides?: Json;
           invitation_draft?: boolean;
+          share_token?: string;
           planning_guest_count?: number;
           shopping_dirty?: boolean;
           shopping_refresh_token?: string | null;
@@ -152,6 +154,7 @@ export type Database = {
           invitation_photo_crops?: Json;
           invitation_menu_overrides?: Json;
           invitation_draft?: boolean;
+          share_token?: string;
           planning_guest_count?: number;
           shopping_dirty?: boolean;
           shopping_refresh_token?: string | null;
@@ -494,6 +497,7 @@ export type Database = {
           dietary_preference: string | null;
           plus_one_count: number;
           notes: string | null;
+          source: string;
           created_at: string;
           updated_at: string;
         };
@@ -508,6 +512,7 @@ export type Database = {
           dietary_preference?: string | null;
           plus_one_count?: number;
           notes?: string | null;
+          source?: string;
         };
         Update: {
           name?: string;
@@ -518,6 +523,7 @@ export type Database = {
           dietary_preference?: string | null;
           plus_one_count?: number;
           notes?: string | null;
+          source?: string;
         };
         Relationships: [];
       };
@@ -796,8 +802,10 @@ export type Database = {
 
 export type InvitePayload = {
   status: "active" | "soft_expired" | "revoked";
+  kind?: "guest" | "share";
   ok?: boolean;
   error?: string;
+  personal_token?: string;
   party?: {
     id: string;
     name: string;

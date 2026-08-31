@@ -62,19 +62,20 @@ export function SendAllInvitesButton({
   partyId,
   guests,
   outbound,
+  shareToken,
 }: {
   partyId: string;
   guests: SendableGuest[];
   outbound: OutboundStatus;
+  shareToken: string;
 }) {
   const [open, setOpen] = useState(false);
-  if (!guests.length) return null;
   return (
     <>
       <button type="button" className="btn-primary" onClick={() => setOpen(true)}>
         <Send size={15} /> Send invitations
       </button>
-      <SendAllDialog partyId={partyId} guests={guests} outbound={outbound} open={open} onClose={() => setOpen(false)} />
+      <SendAllDialog partyId={partyId} guests={guests} outbound={outbound} shareToken={shareToken} open={open} onClose={() => setOpen(false)} />
     </>
   );
 }
@@ -260,27 +261,53 @@ function SendAllDialog({
   partyId,
   guests,
   outbound,
+  shareToken,
   open,
   onClose,
 }: {
   partyId: string;
   guests: SendableGuest[];
   outbound: OutboundStatus;
+  shareToken: string;
   open: boolean;
   onClose: () => void;
 }) {
-  const [channel, setChannel] = useState<InviteChannel>("email");
+  const [channel, setChannel] = useState<InviteChannel | "link">("link");
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const [pending, startTransition] = useTransition();
   const ready = guests.filter((guest) => (channel === "email" ? guest.email : guest.phone));
   const missing = guests.length - ready.length;
   const configured = channel === "email" ? outbound.email : outbound.sms;
 
+  function copyShare() {
+    if (!shareToken) return;
+    startTransition(async () => {
+      await navigator.clipboard.writeText(inviteHref(shareToken));
+      setCopied(true);
+      setStatus("Party link copied. Paste it in a group chat.");
+      setError(null);
+      window.setTimeout(() => setCopied(false), 1800);
+    });
+  }
+
   return (
     <Modal open={open} onClose={onClose} title="Send invitations" panelClassName="md:max-w-xl">
-      <p className="font-handwritten text-lg text-tomato">Email or text everyone who already has a contact.</p>
-      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+      <p className="font-handwritten text-lg text-tomato">Share one link, or send private invites one by one.</p>
+      <div className="mt-5 grid gap-3 sm:grid-cols-3">
+        <ChannelCard
+          selected={channel === "link"}
+          icon={Link2}
+          title="Party link"
+          body="One URL for a group chat. Guests RSVP with their name."
+          onClick={() => {
+            setChannel("link");
+            setStatus(null);
+            setError(null);
+            copyShare();
+          }}
+        />
         <ChannelCard
           selected={channel === "email"}
           icon={Mail}
@@ -304,42 +331,59 @@ function SendAllDialog({
           }}
         />
       </div>
-      <p className="mt-4 text-xs leading-relaxed text-ink/50">
-        {ready.length} will send now{missing ? `, and ${missing} will be skipped until you add a ${channel === "email" ? "email" : "phone number"}` : ""}.
-        Each email includes an Add to Google Calendar button.
-      </p>
-      {!configured ? (
-        <p className="mt-3 text-xs leading-relaxed text-ink/50">
-          {channel === "email"
-            ? "Email is not configured yet. Add GMAIL_USER and GMAIL_APP_PASSWORD to .env.local."
-            : "Texting is not configured yet. Add TWILIO_ACCOUNT_SID (starts with AC), TWILIO_AUTH_TOKEN, and TWILIO_FROM_NUMBER from the Twilio Console."}
-        </p>
-      ) : null}
-      <button
-        type="button"
-        className="btn-primary mt-5 w-full"
-        disabled={pending || !ready.length || !configured}
-        onClick={() => {
-          setError(null);
-          setStatus(null);
-          startTransition(async () => {
-            const result = await sendGuestInvites({
-              partyId,
-              channel,
-              guestIds: ready.map((guest) => guest.id),
-            });
-            if (result.failed.length && !result.sent) {
-              setError(result.failed[0]?.error ?? "Could not send invitations.");
-              return;
-            }
-            const failNote = result.failed.length ? ` ${result.failed.length} failed.` : "";
-            setStatus(`Sent ${result.sent} invitation${result.sent === 1 ? "" : "s"}.${failNote}`);
-            if (result.failed.length) setError(result.failed.map((row) => `${row.name}: ${row.error}`).join(" "));
-          });
-        }}
-      >
-        <Send size={15} /> {pending ? "Sending…" : channel === "email" ? "Email invitations" : "Text invitations"}
-      </button>
+      {channel === "link" ? (
+        <div className="mt-6 space-y-3">
+          <p className="text-xs leading-relaxed text-ink/50">
+            Anyone with this link can open the invitation and RSVP. After they respond, they get a private page to update it.
+          </p>
+          <div className="flex gap-2">
+            <input className="field" readOnly value={shareToken ? `/invite/${shareToken}` : "No party link yet"} />
+            <button type="button" className="btn-secondary shrink-0" disabled={!shareToken || pending} onClick={copyShare}>
+              {copied ? <Check size={15} /> : <Copy size={15} />}
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <p className="mt-4 text-xs leading-relaxed text-ink/50">
+            {ready.length} will send now{missing ? `, and ${missing} will be skipped until you add a ${channel === "email" ? "email" : "phone number"}` : ""}.
+            Each email includes an Add to Google Calendar button.
+          </p>
+          {!configured ? (
+            <p className="mt-3 text-xs leading-relaxed text-ink/50">
+              {channel === "email"
+                ? "Email is not configured yet. Add GMAIL_USER and GMAIL_APP_PASSWORD to .env.local."
+                : "Texting is not configured yet. Add TWILIO_ACCOUNT_SID (starts with AC), TWILIO_AUTH_TOKEN, and TWILIO_FROM_NUMBER from the Twilio Console."}
+            </p>
+          ) : null}
+          <button
+            type="button"
+            className="btn-primary mt-5 w-full"
+            disabled={pending || !ready.length || !configured}
+            onClick={() => {
+              setError(null);
+              setStatus(null);
+              startTransition(async () => {
+                const result = await sendGuestInvites({
+                  partyId,
+                  channel,
+                  guestIds: ready.map((guest) => guest.id),
+                });
+                if (result.failed.length && !result.sent) {
+                  setError(result.failed[0]?.error ?? "Could not send invitations.");
+                  return;
+                }
+                const failNote = result.failed.length ? ` ${result.failed.length} failed.` : "";
+                setStatus(`Sent ${result.sent} invitation${result.sent === 1 ? "" : "s"}.${failNote}`);
+                if (result.failed.length) setError(result.failed.map((row) => `${row.name}: ${row.error}`).join(" "));
+              });
+            }}
+          >
+            <Send size={15} /> {pending ? "Sending…" : channel === "email" ? "Email invitations" : "Text invitations"}
+          </button>
+        </>
+      )}
       {status ? <p className="mt-4 border border-olive/25 bg-olive/10 px-3 py-2 text-xs font-semibold text-olive">{status}</p> : null}
       {error ? <p className="mt-4 border border-tomato/25 bg-tomato/10 px-3 py-2 text-xs font-semibold text-tomato">{error}</p> : null}
     </Modal>
