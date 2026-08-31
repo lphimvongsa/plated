@@ -4,6 +4,7 @@ import { CropEditor } from "@/components/media/crop-editor";
 import { CroppedImage } from "@/components/media/cropped-image";
 import { updateInvitationDraft, uploadInvitationPhoto } from "@/lib/actions/parties";
 import { googleCalendarUrl } from "@/lib/calendar";
+import { compressImageForUpload } from "@/lib/media/compress";
 import { cropArrayFromJson, normalizeCrop, type CropRect } from "@/lib/media/crop";
 import { durationMinutesBetween, partyEndsAt } from "@/lib/party/duration";
 import { inviteCalendarEvent } from "@/lib/outbound/invite";
@@ -233,18 +234,27 @@ export function InvitationEditor({ party, menu }: { party: PartyDraft; menu: Inv
             <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 border border-dashed border-ink/20 p-3 text-[10px] font-bold uppercase tracking-widest hover:border-tomato hover:text-tomato">
               <ImagePlus size={14} />{uploading ? "Uploading…" : "Add photo"}
               <input type="file" accept="image/*" className="sr-only" disabled={uploading} onChange={(event) => {
-                const file = event.target.files?.[0];
+                const input = event.currentTarget;
+                const file = input.files?.[0];
                 if (!file) return;
                 startUpload(async () => {
-                  const fd = new FormData();
-                  fd.set("photo", file);
-                  const result = await uploadInvitationPhoto(party.id, fd);
-                  if (result?.error) return setError(result.error);
-                  if (result.url) {
-                    setPhotos((current) => [...current, result.url!].slice(0, 5));
-                    setPositions((current) => [...current, "50% 50%"].slice(0, 5));
-                    setCrops((current) => [...current, normalizeCrop(null)].slice(0, 5));
-                    setSelectedPhoto(photos.length);
+                  setError(null);
+                  try {
+                    const photo = await compressImageForUpload(file);
+                    const fd = new FormData();
+                    fd.set("photo", photo);
+                    const result = await uploadInvitationPhoto(party.id, fd);
+                    if (result?.error) return setError(result.error);
+                    if (result.url) {
+                      setPhotos((current) => [...current, result.url!].slice(0, 5));
+                      setPositions((current) => [...current, "50% 50%"].slice(0, 5));
+                      setCrops((current) => [...current, normalizeCrop(null)].slice(0, 5));
+                      setSelectedPhoto(photos.length);
+                    }
+                  } catch (uploadError) {
+                    setError(uploadError instanceof Error ? uploadError.message : "Could not upload photo.");
+                  } finally {
+                    input.value = "";
                   }
                 });
               }} />

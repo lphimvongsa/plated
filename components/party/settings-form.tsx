@@ -3,6 +3,7 @@
 import { CropEditor } from "@/components/media/crop-editor";
 import { CroppedImage } from "@/components/media/cropped-image";
 import { deleteParty, updatePartySettings } from "@/lib/actions/parties";
+import { compressImageForUpload } from "@/lib/media/compress";
 import { cropFromJson, normalizeCrop, type CropRect } from "@/lib/media/crop";
 import { formatPartyEndClock, partyDurationOptions } from "@/lib/party/duration";
 import { PARTY_THEMES } from "@/lib/party/themes";
@@ -86,9 +87,17 @@ export function PartySettingsForm({ party }: { party: SettingsParty }) {
             setMessage(null);
             setError(null);
             startTransition(async () => {
-              const result = await updatePartySettings(party.id, formData);
-              if (result?.error) return setError(result.error);
-              setMessage("Changes saved.");
+              try {
+                const cover = formData.get("cover_photo");
+                if (cover instanceof File && cover.size > 0) {
+                  formData.set("cover_photo", await compressImageForUpload(cover));
+                }
+                const result = await updatePartySettings(party.id, formData);
+                if (result?.error) return setError(result.error);
+                setMessage("Changes saved.");
+              } catch (saveError) {
+                setError(saveError instanceof Error ? saveError.message : "Could not save changes.");
+              }
             });
           }}
         >

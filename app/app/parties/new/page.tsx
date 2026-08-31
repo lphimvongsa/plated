@@ -3,6 +3,7 @@
 import { CropEditor } from "@/components/media/crop-editor";
 import { CroppedImage } from "@/components/media/cropped-image";
 import { createParty } from "@/lib/actions/parties";
+import { compressImageForUpload } from "@/lib/media/compress";
 import { DEFAULT_CROP, normalizeCrop, type CropRect } from "@/lib/media/crop";
 import { DEFAULT_PARTY_DURATION_MINUTES, formatPartyEndClock, PARTY_DURATION_OPTIONS } from "@/lib/party/duration";
 import { PARTY_THEMES } from "@/lib/party/themes";
@@ -60,8 +61,13 @@ export default function NewPartyPage() {
     formData.set("cover_position", coverPosition);
     formData.set("cover_crop", JSON.stringify(coverCrop));
     formData.set("color_scheme", scheme);
-    if (coverFile) formData.set("cover_photo", coverFile);
     startTransition(async () => {
+      try {
+        if (coverFile) formData.set("cover_photo", await compressImageForUpload(coverFile));
+      } catch (createError) {
+        setError(createError instanceof Error ? createError.message : "Could not create party.");
+        return;
+      }
       const result = await createParty(formData);
       if (result?.error) setError(result.error);
     });

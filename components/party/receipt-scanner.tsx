@@ -2,6 +2,7 @@
 
 import { Modal } from "@/components/modal";
 import { analyzeReceipt, saveReceiptMatches, type ReceiptAnalysis, type ReceiptMatchDraft } from "@/lib/actions/receipts";
+import { compressImageForUpload } from "@/lib/media/compress";
 import { Camera, Check, FileImage, FileScan, RefreshCw, RotateCcw, Upload, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
@@ -72,18 +73,24 @@ export function ReceiptScanner({ partyId, compact = false }: { partyId: string; 
     setError(null);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(URL.createObjectURL(file));
-    const data = new FormData();
-    data.set("receipt", file);
     startTransition(async () => {
-      const result = await analyzeReceipt(partyId, data);
-      if (!result.ok) {
-        setError(result.error);
+      try {
+        const receipt = await compressImageForUpload(file, { maxEdge: 1800, quality: 0.85 });
+        const data = new FormData();
+        data.set("receipt", receipt);
+        const result = await analyzeReceipt(partyId, data);
+        if (!result.ok) {
+          setError(result.error);
+          setMode("choose");
+          return;
+        }
+        setAnalysis(result);
+        setItems(result.items);
+        setMode("review");
+      } catch (scanError) {
+        setError(scanError instanceof Error ? scanError.message : "Could not read this receipt photo.");
         setMode("choose");
-        return;
       }
-      setAnalysis(result);
-      setItems(result.items);
-      setMode("review");
     });
   }
 
