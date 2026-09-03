@@ -46,7 +46,8 @@ export async function updateSession(request: NextRequest) {
   }
 
   const isOAuthHandshake = path === "/auth/callback" || path === "/auth/google";
-  if (userId && isAuthRoute && !isOAuthHandshake) {
+  const isPasswordReset = path === "/auth/reset";
+  if (userId && isAuthRoute && !isOAuthHandshake && !isPasswordReset) {
     const next = safeNextPath(request.nextUrl.searchParams.get("next"));
     const url = request.nextUrl.clone();
     url.search = "";

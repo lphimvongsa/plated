@@ -19,3 +19,12 @@ export function collaboratorInviteUrl(token: string, origin?: string) {
   return `${base}/collaborate/${token}`;
 }
 
+export function icsFilename(partyName: string) {
+  const slug = partyName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  return `${slug || "invitation"}.ics`;
+}
+

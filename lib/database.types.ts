@@ -21,6 +21,12 @@ export type Database = {
           cooking_skill_level: string;
           specialties: string[];
           onboarding_complete: boolean;
+          notification_master: boolean;
+          notify_rsvps: boolean;
+          notify_collaborator_invites: boolean;
+          notify_collaborator_accepts: boolean;
+          retain_receipt_images: boolean;
+          profile_discoverable: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -35,6 +41,12 @@ export type Database = {
           cooking_skill_level?: string;
           specialties?: string[];
           onboarding_complete?: boolean;
+          notification_master?: boolean;
+          notify_rsvps?: boolean;
+          notify_collaborator_invites?: boolean;
+          notify_collaborator_accepts?: boolean;
+          retain_receipt_images?: boolean;
+          profile_discoverable?: boolean;
         };
         Update: {
           name?: string | null;
@@ -46,6 +58,12 @@ export type Database = {
           cooking_skill_level?: string;
           specialties?: string[];
           onboarding_complete?: boolean;
+          notification_master?: boolean;
+          notify_rsvps?: boolean;
+          notify_collaborator_invites?: boolean;
+          notify_collaborator_accepts?: boolean;
+          retain_receipt_images?: boolean;
+          profile_discoverable?: boolean;
         };
         Relationships: [];
       };
@@ -76,6 +94,7 @@ export type Database = {
           invitation_photo_urls: string[];
           invitation_photo_positions: string[];
           invitation_photo_crops: Json;
+          invitation_photo_slots: string[];
           invitation_menu_overrides: Json;
           invitation_draft: boolean;
           share_token: string;
@@ -116,6 +135,7 @@ export type Database = {
           invitation_photo_urls?: string[];
           invitation_photo_positions?: string[];
           invitation_photo_crops?: Json;
+          invitation_photo_slots?: string[];
           invitation_menu_overrides?: Json;
           invitation_draft?: boolean;
           share_token?: string;
@@ -152,6 +172,7 @@ export type Database = {
           invitation_photo_urls?: string[];
           invitation_photo_positions?: string[];
           invitation_photo_crops?: Json;
+          invitation_photo_slots?: string[];
           invitation_menu_overrides?: Json;
           invitation_draft?: boolean;
           share_token?: string;
@@ -799,6 +820,70 @@ export type Database = {
         };
         Relationships: [];
       };
+      notifications: {
+        Row: {
+          id: string;
+          user_id: string;
+          party_id: string | null;
+          type: string;
+          title: string;
+          body: string | null;
+          href: string | null;
+          read_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          party_id?: string | null;
+          type: string;
+          title: string;
+          body?: string | null;
+          href?: string | null;
+          read_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          party_id?: string | null;
+          type?: string;
+          title?: string;
+          body?: string | null;
+          href?: string | null;
+          read_at?: string | null;
+        };
+        Relationships: [];
+      };
+      push_subscriptions: {
+        Row: {
+          id: string;
+          user_id: string;
+          endpoint: string;
+          p256dh: string;
+          auth: string;
+          user_agent: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          endpoint: string;
+          p256dh: string;
+          auth: string;
+          user_agent?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          endpoint?: string;
+          p256dh?: string;
+          auth?: string;
+          user_agent?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -881,6 +966,7 @@ export type InvitePayload = {
     invitation_photo_urls: string[];
     invitation_photo_positions: string[];
     invitation_photo_crops: Json;
+    invitation_photo_slots?: string[];
   };
   guest?: {
     id: string;

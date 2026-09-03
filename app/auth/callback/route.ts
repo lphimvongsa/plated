@@ -17,6 +17,10 @@ export async function GET(request: Request) {
       } = await supabase.auth.getUser();
 
       if (user) {
+        if (next === "/auth/reset") {
+          return NextResponse.redirect(`${origin}${next}`);
+        }
+
         const { data: profile } = await supabase
           .from("profiles")
           .select("onboarding_complete")

@@ -77,7 +77,33 @@ export async function requestPasswordReset(email: string) {
   const value = email.trim();
   if (!value) return { error: "Enter your email first." };
   const origin = siteUrl();
-  const { error } = await supabase.auth.resetPasswordForEmail(value, { redirectTo: `${origin}/auth/login?reset=1` });
+  const { error } = await supabase.auth.resetPasswordForEmail(value, {
+    redirectTo: `${origin}/auth/callback?next=${encodeURIComponent("/auth/reset")}`,
+  });
   if (error) return { error: error.message };
   return { error: null, message: "Password reset email sent." };
+}
+
+export async function updatePassword(formData: FormData) {
+  const supabase = await createClient();
+  const password = String(formData.get("password") ?? "");
+  const confirm = String(formData.get("confirm") ?? "");
+
+  if (password.length < 8) {
+    return { error: "Use at least 8 characters." };
+  }
+  if (password !== confirm) {
+    return { error: "Passwords don’t match." };
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { error: "This reset link has expired. Request a new one." };
+  }
+
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) return { error: error.message };
+  return { error: null };
 }
