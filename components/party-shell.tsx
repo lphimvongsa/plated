@@ -1,5 +1,6 @@
 "use client";
 
+import { PartyAccessProvider, usePartyAccess } from "@/lib/party/access-client";
 import { formatPartyWhen } from "@/lib/calendar";
 import { PartyThemeBridge } from "@/components/party-theme-bridge";
 import { partyThemeCssVars } from "@/lib/party/themes";
@@ -21,11 +22,28 @@ type PartyShellProps = {
   party: PartyShellParty;
   collaborators: string[];
   previewToken: string | null;
+  role: string | null;
   children: ReactNode;
 };
 
-export function PartyShell({ party, collaborators, previewToken, children }: PartyShellProps) {
+export function PartyShell({ party, collaborators, previewToken, role, children }: PartyShellProps) {
+  return (
+    <PartyAccessProvider role={role}>
+      <PartyShellFrame party={party} collaborators={collaborators} previewToken={previewToken}>
+        {children}
+      </PartyShellFrame>
+    </PartyAccessProvider>
+  );
+}
+
+function PartyShellFrame({
+  party,
+  collaborators,
+  previewToken,
+  children,
+}: Omit<PartyShellProps, "role">) {
   const pathname = usePathname();
+  const { canEdit } = usePartyAccess();
   const base = `/app/parties/${party.id}`;
   const { date, time } = formatPartyWhen(party.starts_at, party.timezone);
   const statusLabel = party.status === "scheduled" ? "Upcoming" : party.status;
@@ -43,12 +61,21 @@ export function PartyShell({ party, collaborators, previewToken, children }: Par
   ] as const;
 
   const previewHref = previewToken ? `/invite/${previewToken}` : `${base}/invitation`;
+  const lockViewport = pathname === `${base}/invitation` || pathname === `${base}/settings`;
 
   return (
     <>
       <PartyThemeBridge scheme={party.color_scheme} />
-      <div className="party-theme min-h-full bg-paper text-ink" style={partyThemeCssVars(party.color_scheme)}>
-      <div className="border-b border-ink/15 bg-paper-2 px-4 py-6 md:px-8 xl:px-12">
+      <div
+        className={`party-theme bg-paper text-ink ${lockViewport ? "flex h-full min-h-0 flex-col overflow-hidden" : "min-h-full"}`}
+        style={partyThemeCssVars(party.color_scheme)}
+      >
+      {!canEdit ? (
+        <div className="shrink-0 border-b border-olive/25 bg-olive/10 px-4 py-2.5 text-center text-xs font-semibold text-olive md:px-8 xl:px-12">
+          You are a helper on this party. You can view every detail, but you cannot make changes.
+        </div>
+      ) : null}
+      <div className="shrink-0 border-b border-ink/15 bg-paper-2 px-4 py-6 md:px-8 xl:px-12">
         <div className="mx-auto max-w-7xl">
           <Link href="/app/parties" className="editorial-link text-ink/45 hover:text-tomato">
             <ChevronLeft size={13} /> All parties
@@ -81,8 +108,11 @@ export function PartyShell({ party, collaborators, previewToken, children }: Par
                   ))}
                 </div>
               ) : null}
+              <Link href={`${base}/settings`} className="btn-secondary">
+                <Users size={15} /> Collaborators
+              </Link>
               <Link href={`${base}/guests`} className="btn-secondary">
-                <Users size={15} /> Invite
+                Invite guests
               </Link>
               {previewToken ? (
                 <Link href={previewHref} className="btn-secondary" target="_blank">
@@ -98,7 +128,7 @@ export function PartyShell({ party, collaborators, previewToken, children }: Par
         </div>
       </div>
 
-      <div className="sticky top-[62px] z-20 overflow-x-auto border-b border-ink/15 bg-paper/96 px-4 backdrop-blur lg:top-0 md:px-8 xl:px-12">
+      <div className="sticky top-[62px] z-20 shrink-0 overflow-x-auto border-b border-ink/15 bg-paper/96 px-4 backdrop-blur lg:top-0 md:px-8 xl:px-12">
         <nav className="mx-auto flex max-w-7xl min-w-max gap-2 py-1.5">
           {tabs.map(([href, label]) => {
             const active = pathname === href;
@@ -119,7 +149,15 @@ export function PartyShell({ party, collaborators, previewToken, children }: Par
         </nav>
       </div>
 
-      <div className="mx-auto max-w-7xl p-4 md:p-8 xl:px-12 xl:py-10">{children}</div>
+      <div
+        className={
+          lockViewport
+            ? "mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col overflow-hidden p-4 md:px-8 md:py-6 xl:px-12"
+            : "mx-auto max-w-7xl p-4 md:p-8 xl:px-12 xl:py-10"
+        }
+      >
+        {children}
+      </div>
       </div>
     </>
   );

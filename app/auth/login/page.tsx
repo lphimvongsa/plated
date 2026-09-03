@@ -1,7 +1,7 @@
 "use client";
 
 import { Brand } from "@/components/brand";
-import { signInWithEmail, signUpWithEmail } from "@/lib/actions/auth";
+import { requestPasswordReset, signInWithEmail, signUpWithEmail } from "@/lib/actions/auth";
 import { ArrowRight, Eye, EyeOff, Mail } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -18,8 +18,9 @@ function oauthErrorMessage(code: string | null) {
 
 function LoginForm() {
   const searchParams = useSearchParams();
+  const next = searchParams.get("next") || "/app";
   const [showPassword, setShowPassword] = useState(false);
-  const [mode, setMode] = useState<"login" | "signup">("signup");
+  const [mode, setMode] = useState<"login" | "signup">(searchParams.get("mode") === "signup" ? "signup" : searchParams.get("mode") === "login" ? "login" : "signup");
   const [error, setError] = useState<string | null>(oauthErrorMessage(searchParams.get("error")));
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -58,7 +59,7 @@ function LoginForm() {
               : "Sign in to return to your menus, guests, and timelines."}
           </p>
 
-          <a href="/auth/google" className="btn-secondary mt-8 w-full justify-between bg-[#faf7f0]">
+          <a href={`/auth/google?next=${encodeURIComponent(next)}`} className="btn-secondary mt-8 w-full justify-between bg-[#faf7f0]">
             <span className="inline-flex items-center gap-3"><span className="text-sm font-bold text-[#4285F4]">G</span> Continue with Google</span>
             <ArrowRight size={14} />
           </a>
@@ -79,6 +80,7 @@ function LoginForm() {
               setError(null);
               setMessage(null);
               const formData = new FormData(event.currentTarget);
+              formData.set("next", next);
               startTransition(async () => {
                 const result =
                   mode === "signup"
@@ -107,7 +109,7 @@ function LoginForm() {
             <label className="block">
               <span className="mb-2 flex items-center justify-between text-[9px] font-bold uppercase tracking-[0.12em]">
                 <span>Password</span>
-                {mode === "login" ? <button type="button" className="text-tomato">Forgot password?</button> : null}
+                {mode === "login" ? <button type="button" className="text-tomato" onClick={() => { const email = (document.querySelector('input[name="email"]') as HTMLInputElement | null)?.value || ""; setError(null); setMessage(null); startTransition(async () => { const result = await requestPasswordReset(email); if (result.error) setError(result.error); else setMessage(result.message ?? "Password reset email sent."); }); }}>Forgot password?</button> : null}
               </span>
               <div className="relative">
                 <input

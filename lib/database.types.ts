@@ -215,6 +215,43 @@ export type Database = {
         };
         Relationships: [];
       };
+      party_collaborator_invites: {
+        Row: {
+          id: string;
+          party_id: string;
+          email: string;
+          role: string;
+          token: string;
+          invited_by: string;
+          created_at: string;
+          last_sent_at: string | null;
+          accepted_at: string | null;
+          accepted_user_id: string | null;
+          revoked_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          party_id: string;
+          email: string;
+          role: string;
+          token?: string;
+          invited_by: string;
+          last_sent_at?: string | null;
+          accepted_at?: string | null;
+          accepted_user_id?: string | null;
+          revoked_at?: string | null;
+        };
+        Update: {
+          email?: string;
+          role?: string;
+          token?: string;
+          last_sent_at?: string | null;
+          accepted_at?: string | null;
+          accepted_user_id?: string | null;
+          revoked_at?: string | null;
+        };
+        Relationships: [];
+      };
       recipes: {
         Row: {
           id: string;
@@ -691,6 +728,8 @@ export type Database = {
           start_at: string | null;
           due_at: string | null;
           duration_minutes: number | null;
+          base_duration_minutes: number | null;
+          duration_scaling_mode: string | null;
           status: string;
           difficulty: string | null;
           required_specialty: string | null;
@@ -713,6 +752,8 @@ export type Database = {
           start_at?: string | null;
           due_at?: string | null;
           duration_minutes?: number | null;
+          base_duration_minutes?: number | null;
+          duration_scaling_mode?: string | null;
           status?: string;
           difficulty?: string | null;
           required_specialty?: string | null;
@@ -731,6 +772,8 @@ export type Database = {
           start_at?: string | null;
           due_at?: string | null;
           duration_minutes?: number | null;
+          base_duration_minutes?: number | null;
+          duration_scaling_mode?: string | null;
           status?: string;
           difficulty?: string | null;
           assigned_name?: string | null;
@@ -768,6 +811,14 @@ export type Database = {
       finish_party_refresh: {
         Args: { p_party_id: string; p_kind: string; p_token: string; p_success: boolean };
         Returns: boolean;
+      };
+      get_collaborator_invite_by_token: {
+        Args: { p_token: string };
+        Returns: Json;
+      };
+      accept_collaborator_invite: {
+        Args: { p_token: string };
+        Returns: Json;
       };
       get_invite_by_token: {
         Args: { p_token: string };

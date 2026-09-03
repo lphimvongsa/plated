@@ -6,8 +6,10 @@ import {
   addPartyRecipeToMenu,
   removeRecipeFromMenu,
   updatePlanningServings,
+  updateServiceStyle,
 } from "@/lib/actions/menu";
 import { copyCookbookRecipeToParty } from "@/lib/actions/recipes";
+import { usePartyAccess } from "@/lib/party/access-client";
 import { formatMinutes } from "@/lib/rsvp";
 import {
   AlertTriangle,
@@ -76,11 +78,13 @@ export function MenuBuilder({
   groceryEstimatedTotal?: number;
 }) {
   const router = useRouter();
+  const { canEdit } = usePartyAccess();
   const [pending, startTransition] = useTransition();
   const [recipes, setRecipes] = useState(initialRecipes);
   const [savedGuests, setSavedGuests] = useState(Math.max(1, planningGuests || 8));
   const [guests, setGuests] = useState(Math.max(1, planningGuests || 8));
   const [unit, setUnit] = useState<"US" | "Metric">("US");
+  const [style, setStyle] = useState(serviceStyle || "Family style");
   const [analysisOpen, setAnalysisOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [cookbookOpen, setCookbookOpen] = useState(false);
@@ -188,6 +192,7 @@ export function MenuBuilder({
         <div>
           <h2 className="font-editorial text-5xl font-semibold leading-none">Menu Planner</h2>
         </div>
+        {canEdit ? (
         <div className="flex flex-wrap gap-2">
           <button type="button" className="btn-secondary" onClick={() => setAnalysisOpen(true)}>
             <Sparkles size={16} /> Analyze kitchen
@@ -196,6 +201,7 @@ export function MenuBuilder({
             <Plus size={16} /> Add recipe
           </button>
         </div>
+        ) : null}
       </section>
 
       {actionError ? (
@@ -213,9 +219,9 @@ export function MenuBuilder({
         <div className="flex w-full min-w-max items-start justify-between gap-6">
           <div className="grid shrink-0 grid-rows-[1rem_2.75rem] gap-2">
             <p className="eyebrow leading-none">Menu structure</p>
-            <button type="button" className="flex h-full items-center gap-2 font-editorial text-2xl font-semibold leading-none">
-              {serviceStyle || "Family style"} <ChevronDown size={17} />
-            </button>
+            <select value={style} disabled={!canEdit || pending} onChange={(e) => { const value=e.target.value; setStyle(value); startTransition(async()=>{const result=await updateServiceStyle(partyId,value); if(result?.error)setActionError(result.error);}); }} className="h-full bg-transparent pr-8 font-editorial text-2xl font-semibold leading-none outline-none">
+              {["Family style","Buffet","Plated courses","Cocktail party","Potluck","Tasting menu"].map(option => <option key={option}>{option}</option>)}
+            </select>
           </div>
           <div className="grid shrink-0 grid-rows-[1rem_2.75rem] gap-2">
             <span className="eyebrow leading-none">Planning servings</span>
@@ -223,7 +229,8 @@ export function MenuBuilder({
               <button
                 type="button"
                 onClick={() => setGuests(Math.max(1, guests - 1))}
-                className="h-9 w-9 rounded-full hover:bg-ink/5"
+                disabled={!canEdit}
+                className="h-9 w-9 rounded-full hover:bg-ink/5 disabled:opacity-40"
               >
                 −
               </button>
@@ -231,7 +238,8 @@ export function MenuBuilder({
               <button
                 type="button"
                 onClick={() => setGuests(guests + 1)}
-                className="h-9 w-9 rounded-full hover:bg-ink/5"
+                disabled={!canEdit}
+                className="h-9 w-9 rounded-full hover:bg-ink/5 disabled:opacity-40"
               >
                 +
               </button>
@@ -278,7 +286,7 @@ export function MenuBuilder({
               <button
                 type="button"
                 className="btn-primary h-11 px-4 text-[10px]"
-                disabled={!servingsDirty || pending}
+                disabled={!servingsDirty || pending || !canEdit}
                 onClick={handleSaveServings}
               >
                 <Save size={14} /> Save
@@ -298,9 +306,11 @@ export function MenuBuilder({
           <div className="card p-8 text-center">
             <p className="font-editorial text-3xl font-semibold">No dishes on the menu yet.</p>
             <p className="mt-3 text-sm text-ink/50">Add recipes from your cookbook to build the meal.</p>
+            {canEdit ? (
             <button type="button" className="btn-primary mt-6" onClick={() => setAddOpen(true)}>
               <Plus size={16} /> Add recipe
             </button>
+            ) : null}
           </div>
         ) : null}
         {recipes.map((recipe, index) => {
@@ -365,6 +375,7 @@ export function MenuBuilder({
                         type="button"
                         onClick={() => setSubOpen(true)}
                         className="btn-secondary shrink-0 border-tomato/30 text-tomato"
+                        disabled={!canEdit}
                       >
                         <WandSparkles size={15} /> Find replacement
                       </button>
@@ -377,6 +388,7 @@ export function MenuBuilder({
                     <span className="chip">Est. ${cost.toFixed(2)}</span>
                   </div>
                 </div>
+                {canEdit ? (
                 <div className="flex border-t border-ink/10 md:flex-col md:border-l md:border-t-0">
                   <button
                     type="button"
@@ -406,10 +418,12 @@ export function MenuBuilder({
                     <X size={17} />
                   </button>
                 </div>
+                ) : null}
               </div>
             </article>
           );
         })}
+        {canEdit ? (
         <button
           type="button"
           className="flex min-h-28 w-full items-center justify-center gap-2 rounded-[1.75rem] border-2 border-dashed border-ink/15 text-sm font-bold text-ink/45 transition hover:border-tomato hover:bg-tomato/5 hover:text-tomato"
@@ -417,6 +431,7 @@ export function MenuBuilder({
         >
           <Plus size={17} /> Add another course or dish
         </button>
+        ) : null}
       </section>
 
       <Modal open={analysisOpen} onClose={() => setAnalysisOpen(false)} title="Kitchen analysis">

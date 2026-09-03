@@ -1,0 +1,4 @@
+"use client";
+import { createClient } from "@/lib/supabase/client";
+import { useEffect } from "react";
+export function NotificationBridge(){useEffect(()=>{const supabase=createClient();let channel:any;supabase.auth.getUser().then(({data})=>{if(!data.user)return;channel=(supabase as any).channel("plated-native-notifications").on("postgres_changes",{event:"INSERT",schema:"public",table:"user_notifications",filter:`user_id=eq.${data.user.id}`},async(payload:any)=>{const prefs=JSON.parse(localStorage.getItem("plated.settings")||"{}");if(prefs.master===false||prefs[payload.new.kind]===false||Notification.permission!=="granted")return;const reg=await navigator.serviceWorker.ready;reg.showNotification(payload.new.title,{body:payload.new.body||"",data:{url:payload.new.url||"/app"}});}).subscribe();});return()=>{if(channel)supabase.removeChannel(channel)}},[]);return null;}

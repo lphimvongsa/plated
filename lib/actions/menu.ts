@@ -1,18 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
+import { requirePartyEditor } from "@/lib/party/access";
 import { schedulePartyDerivedRefresh } from "@/lib/party/refresh-derived";
-import { createClient } from "@/lib/supabase/server";
-
-async function requireUser() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/auth/login");
-  return { supabase, user };
-}
 
 function revalidateMenu(partyId: string) {
   revalidatePath(`/app/parties/${partyId}`);
@@ -24,7 +14,9 @@ function revalidateMenu(partyId: string) {
 }
 
 export async function removeRecipeFromMenu(partyId: string, recipeId: string) {
-  const { supabase } = await requireUser();
+  const access = await requirePartyEditor(partyId);
+  if (access.error) return { error: access.error };
+  const { supabase } = access;
 
   const { error } = await supabase
     .from("menu_items")
@@ -43,7 +35,9 @@ export async function removeRecipeFromMenu(partyId: string, recipeId: string) {
 }
 
 export async function updatePlanningServings(partyId: string, guestCount: number) {
-  const { supabase } = await requireUser();
+  const access = await requirePartyEditor(partyId);
+  if (access.error) return { error: access.error };
+  const { supabase } = access;
   const next = Math.max(1, Math.min(500, Math.round(guestCount)));
 
   const { error } = await supabase
@@ -59,16 +53,18 @@ export async function updatePlanningServings(partyId: string, guestCount: number
 }
 
 export async function addPartyRecipeToMenu(partyId: string, recipeId: string) {
-  const { supabase, user } = await requireUser();
+  const access = await requirePartyEditor(partyId);
+  if (access.error) return { error: access.error };
+  const { supabase } = access;
 
   const { data: recipe } = await supabase
     .from("recipes")
-    .select("id, course, owner_id, party_id")
+    .select("id, course, party_id")
     .eq("id", recipeId)
     .eq("party_id", partyId)
     .maybeSingle();
 
-  if (!recipe || recipe.owner_id !== user.id) {
+  if (!recipe) {
     return { error: "Party recipe not found." };
   }
 
@@ -103,4 +99,14 @@ export async function addPartyRecipeToMenu(partyId: string, recipeId: string) {
   schedulePartyDerivedRefresh(partyId);
   revalidateMenu(partyId);
   return { error: null, recipeId };
+}
+
+export async function updateServiceStyle(partyId: string, serviceStyle: string) {
+  const access = await requirePartyEditor(partyId);
+  if (access.error) return { error: access.error };
+  const { error } = await access.supabase.from("parties").update({ service_style: serviceStyle }).eq("id", partyId);
+  if (error) return { error: error.message };
+  revalidatePath(`/app/parties/${partyId}/menu`);
+  revalidatePath(`/app/parties/${partyId}`);
+  return { error: null };
 }

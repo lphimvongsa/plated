@@ -2,16 +2,23 @@
 
 import { CropEditor } from "@/components/media/crop-editor";
 import { CroppedImage } from "@/components/media/cropped-image";
+import { OverviewPolaroids } from "@/components/invite/overview-polaroids";
+import { PolaroidPhoto } from "@/components/invite/polaroid-photo";
 import { CopyShareLinkButton } from "@/components/party/share-invite-link";
 import { updateInvitationDraft, uploadInvitationPhoto } from "@/lib/actions/parties";
-import { googleCalendarUrl } from "@/lib/calendar";
 import { compressImageForUpload } from "@/lib/media/compress";
-import { cropArrayFromJson, normalizeCrop, type CropRect } from "@/lib/media/crop";
-import { durationMinutesBetween, partyEndsAt } from "@/lib/party/duration";
-import { inviteCalendarEvent } from "@/lib/outbound/invite";
+import { cropArrayFromJson, cropArrayWithCaptions, normalizeCrop, photoCaptionArrayFromJson, type CropRect } from "@/lib/media/crop";
+import {
+  DEFAULT_INVITATION_SLOTS,
+  INVITATION_PHOTO_SLOTS,
+  MAX_INVITATION_PHOTOS,
+  normalizeInvitationPhotoSlot,
+  type InvitationPhotoSlot,
+} from "@/lib/invitation-photo-slots";
+import { TimezoneSelect } from "@/components/party/timezone-select";
 import { PARTY_THEMES, partyThemeByKey, partyThemeCssVars } from "@/lib/party/themes";
-import { ArrowDown, ArrowUp, CalendarPlus, Crop, ImagePlus, MapPin, Save, Send, Sparkles, Wine, X } from "lucide-react";
-import Link from "next/link";
+import { DEFAULT_TIMEZONE, normalizeTimezone, timezoneShortLabel } from "@/lib/timezone";
+import { Crop, ImagePlus, MapPin, Save, Sparkles, Wine, X } from "lucide-react";
 import { useMemo, useState, useTransition } from "react";
 
 export type InvitationMenuItem = {
@@ -57,14 +64,34 @@ export function InvitationEditor({ party, menu, shareToken }: { party: PartyDraf
   const [bring, setBring] = useState(party.guest_contribution_notes || "Just yourself");
   const [date, setDate] = useState(party.date);
   const [time, setTime] = useState(party.time);
+  const [timezone, setTimezone] = useState(normalizeTimezone(party.timezone || DEFAULT_TIMEZONE));
   const [location, setLocation] = useState(party.location || "");
-  const initialPhotos = party.invitation_photo_urls.length
-    ? party.invitation_photo_urls.slice(0, 5)
-    : [party.hero_image || "/photos/party-01.webp"];
-  const [photos, setPhotos] = useState(initialPhotos);
-  const [positions, setPositions] = useState(initialPhotos.map((_, i) => party.invitation_photo_positions[i] || "50% 50%"));
-  const [crops, setCrops] = useState<CropRect[]>(cropArrayFromJson(party.invitation_photo_crops, initialPhotos.length));
-  const photoSlotLabels = ["Overview · primary", "Overview · detail", "Menu · photo 1", "Menu · photo 2", "RSVP · photo"] as const;
+  const initialPhotoState = useMemo(() => {
+    const sourcePhotos = party.invitation_photo_urls.length
+      ? party.invitation_photo_urls.slice(0, MAX_INVITATION_PHOTOS)
+      : [party.hero_image || "/photos/party-01.webp"];
+    const sourceCrops = cropArrayFromJson(party.invitation_photo_crops, sourcePhotos.length);
+    const sourceCaptions = photoCaptionArrayFromJson(party.invitation_photo_crops, sourcePhotos.length);
+    const used = new Set<InvitationPhotoSlot>();
+    const next = { photos: [] as string[], positions: [] as InvitationPhotoSlot[], crops: [] as CropRect[], captions: [] as string[] };
+
+    sourcePhotos.forEach((photo, i) => {
+      if (next.photos.length >= MAX_INVITATION_PHOTOS) return;
+      const preferred = normalizeInvitationPhotoSlot(party.invitation_photo_positions[i] || "", i);
+      if (used.has(preferred)) return;
+      used.add(preferred);
+      next.photos.push(photo);
+      next.positions.push(preferred);
+      next.crops.push(sourceCrops[i] ?? normalizeCrop(null));
+      next.captions.push(sourceCaptions[i] || "");
+    });
+
+    return next;
+  }, [party.hero_image, party.invitation_photo_crops, party.invitation_photo_positions, party.invitation_photo_urls]);
+  const [photos, setPhotos] = useState(initialPhotoState.photos);
+  const [positions, setPositions] = useState<InvitationPhotoSlot[]>(initialPhotoState.positions);
+  const [crops, setCrops] = useState<CropRect[]>(initialPhotoState.crops);
+  const [captions, setCaptions] = useState<string[]>(initialPhotoState.captions);
   const [selectedPhoto, setSelectedPhoto] = useState(0);
   const [cropOpen, setCropOpen] = useState(false);
   const [menuDraft, setMenuDraft] = useState(menu);
@@ -73,27 +100,25 @@ export function InvitationEditor({ party, menu, shareToken }: { party: PartyDraf
   const [pending, startTransition] = useTransition();
   const [uploading, startUpload] = useTransition();
 
-  function movePhoto(index: number, delta: number) {
-    const target = index + delta;
-    if (target < 0 || target >= photos.length) return;
-    const next = [...photos];
-    const nextPos = [...positions];
-    const nextCrops = [...crops];
-    [next[index], next[target]] = [next[target], next[index]];
-    [nextPos[index], nextPos[target]] = [nextPos[target], nextPos[index]];
-    [nextCrops[index], nextCrops[target]] = [nextCrops[target], nextCrops[index]];
-    setPhotos(next);
-    setPositions(nextPos);
-    setCrops(nextCrops);
-    setSelectedPhoto(target);
-  }
-
   function removePhoto(index: number) {
-    if (photos.length <= 1) return;
     setPhotos((current) => current.filter((_, i) => i !== index));
     setPositions((current) => current.filter((_, i) => i !== index));
     setCrops((current) => current.filter((_, i) => i !== index));
+    setCaptions((current) => current.filter((_, i) => i !== index));
     setSelectedPhoto(0);
+  }
+
+  function setPhotoSlot(index: number, slot: InvitationPhotoSlot) {
+    setPositions((current) => {
+      const next = [...current];
+      const occupiedIndex = next.findIndex((value, i) => i !== index && value === slot);
+      if (occupiedIndex >= 0) {
+        const fallback = DEFAULT_INVITATION_SLOTS.find((candidate) => !next.some((value, i) => i !== occupiedIndex && value === candidate));
+        if (fallback) next[occupiedIndex] = fallback;
+      }
+      next[index] = slot;
+      return next;
+    });
   }
 
   function save() {
@@ -107,10 +132,11 @@ export function InvitationEditor({ party, menu, shareToken }: { party: PartyDraf
     data.set("color_scheme", scheme);
     data.set("date", date);
     data.set("time", time);
+    data.set("timezone", timezone);
     data.set("location", location);
     photos.forEach((photo) => data.append("invitation_photo_urls", photo));
     positions.forEach((position) => data.append("invitation_photo_positions", position));
-    data.set("invitation_photo_crops", JSON.stringify(crops));
+    data.set("invitation_photo_crops", JSON.stringify(cropArrayWithCaptions(crops, captions)));
     data.set(
       "invitation_menu_overrides",
       JSON.stringify(
@@ -126,33 +152,19 @@ export function InvitationEditor({ party, menu, shareToken }: { party: PartyDraf
     });
   }
 
-  const mainPhoto = photos[0] || party.hero_image || "/photos/party-01.webp";
-  const secondPhoto = photos[1] || photos[0] || "/photos/party-03.webp";
-  const previewCalendar = useMemo(() => {
-    const parsedStart = date && time ? new Date(`${date}T${time}:00`) : new Date(party.starts_at);
-    const startsAt = Number.isNaN(parsedStart.getTime()) ? party.starts_at : parsedStart.toISOString();
-    const durationMinutes = durationMinutesBetween(party.starts_at, party.ends_at);
-    const endsAt = partyEndsAt(new Date(startsAt), durationMinutes).toISOString();
-    return googleCalendarUrl(
-      inviteCalendarEvent(
-        {
-          name: party.name,
-          startsAt,
-          endsAt,
-          timezone: party.timezone,
-          location,
-          description: message,
-          invitationMessage: message,
-          invitationHeadline: headline,
-        },
-        `/invite/preview`,
-      ),
-    );
-  }, [date, time, party.starts_at, party.ends_at, party.timezone, party.name, location, message, headline]);
+  const photoAt = (slot: InvitationPhotoSlot) => {
+    const index = positions.findIndex((value) => value === slot);
+    return index >= 0 ? { src: photos[index], crop: crops[index], caption: captions[index] || "", index } : null;
+  };
+  const overviewPhoto = photoAt("overview_left");
+  const overviewRight = photoAt("overview_right");
+  const menuLeft = photoAt("menu_left");
+  const menuRight = photoAt("menu_right");
+  const rsvpBottom = photoAt("rsvp_bottom");
 
   return (
-    <div className="space-y-6">
-      <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+    <div className="flex min-h-0 flex-1 flex-col space-y-6 lg:h-full lg:overflow-hidden">
+      <section className="flex shrink-0 flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <h2 className="font-editorial text-5xl font-semibold">Invitation</h2>
         </div>
@@ -162,16 +174,13 @@ export function InvitationEditor({ party, menu, shareToken }: { party: PartyDraf
             {pending ? "Saving…" : "Save draft"}
           </button>
           <CopyShareLinkButton token={shareToken} />
-          <Link href={`/app/parties/${party.id}/guests`} className="btn-secondary">
-            <Send size={15} /> Send invitations
-          </Link>
         </div>
       </section>
-      {status ? <p className="border border-olive/25 bg-olive/10 px-3 py-2 text-xs font-semibold text-olive">{status}</p> : null}
-      {error ? <p className="border border-tomato/25 bg-tomato/10 px-3 py-2 text-xs font-semibold text-tomato">{error}</p> : null}
+      {status ? <p className="shrink-0 border border-olive/25 bg-olive/10 px-3 py-2 text-xs font-semibold text-olive">{status}</p> : null}
+      {error ? <p className="shrink-0 border border-tomato/25 bg-tomato/10 px-3 py-2 text-xs font-semibold text-tomato">{error}</p> : null}
 
-      <div className="grid min-h-[calc(100dvh-250px)] gap-6 xl:grid-cols-[400px_minmax(0,1fr)]">
-        <aside className="space-y-5">
+      <div className="grid min-h-0 flex-1 items-stretch gap-6 lg:grid-cols-[minmax(260px,20rem)_minmax(0,1fr)] lg:overflow-hidden">
+        <aside className="space-y-5 lg:min-h-0 lg:overflow-y-auto">
           <div className="card space-y-4 p-5">
             <p className="eyebrow">Front</p>
             <label><span className="mb-1.5 block text-xs font-semibold">Headline</span><input className="field" value={headline} onChange={(e) => setHeadline(e.target.value)} /></label>
@@ -180,12 +189,68 @@ export function InvitationEditor({ party, menu, shareToken }: { party: PartyDraf
               <label><span className="mb-1.5 block text-xs font-semibold">Date</span><input className="field" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
               <label><span className="mb-1.5 block text-xs font-semibold">Time</span><input className="field" type="time" value={time} onChange={(e) => setTime(e.target.value)} /></label>
             </div>
+            <TimezoneSelect value={timezone} onChange={setTimezone} labelClassName="mb-1.5 block text-xs font-semibold" />
             <label><span className="mb-1.5 block text-xs font-semibold">Location</span><input className="field" value={location} onChange={(e) => setLocation(e.target.value)} /></label>
             <label><span className="mb-1.5 block text-xs font-semibold">RSVP wording</span><input className="field" value={rsvpLabel} onChange={(e) => setRsvpLabel(e.target.value)} /></label>
             <label><span className="mb-1.5 block text-xs font-semibold">Host / signoff</span><input className="field" value={signoff} onChange={(e) => setSignoff(e.target.value)} /></label>
             <label><span className="mb-1.5 block text-xs font-semibold">Dress code</span><input className="field" value={dressCode} onChange={(e) => setDressCode(e.target.value)} /></label>
             <label><span className="mb-1.5 block text-xs font-semibold">Items to bring</span><input className="field" value={bring} onChange={(e) => setBring(e.target.value)} /></label>
           </div>
+
+        <div className="card p-5">
+          <div className="flex items-center justify-between gap-3"><div><p className="eyebrow">Color scheme</p><p className="mt-1 text-xs text-ink/45">The same scheme drives the active party UI and invitation.</p></div><span className="text-[10px] font-bold uppercase tracking-widest text-ink/40">{theme.name}</span></div>
+          <div className="mt-3 grid grid-cols-5 gap-2">{PARTY_THEMES.map((item) => <button key={item.key} type="button" onClick={() => setScheme(item.key)} className={`group border p-1.5 transition hover:-translate-y-0.5 hover:shadow-sm ${scheme === item.key ? "border-ink" : "border-ink/10"}`} title={item.name} style={{ background: item.paper }}><div className="flex h-6 overflow-hidden">{[item.primary, item.secondary, item.olive].map((color) => <span key={color} className="flex-1" style={{ background: color }} />)}</div></button>)}</div>
+        </div>
+
+        <div className="card p-5">
+          <div className="flex items-center justify-between"><div><p className="eyebrow">Photos</p><p className="mt-1 text-xs text-ink/45">A single Overview photo stays full-size. Add Overview · right to layer a second Polaroid over it. Menu keeps left/right, and RSVP keeps one bottom photo.</p></div><span className="text-xs font-bold">{photos.length}/{MAX_INVITATION_PHOTOS}</span></div>
+          <div className="mt-3 space-y-2">
+            {photos.map((photo, index) => (
+              <div key={`${photo}-${index}`} className={`grid grid-cols-[64px_1fr_auto] gap-3 border p-2 ${selectedPhoto === index ? "border-tomato" : "border-ink/12"}`} onClick={() => setSelectedPhoto(index)}>
+                <CroppedImage src={photo} alt="" crop={crops[index]} className="h-16 w-16" />
+                <div className="space-y-2">
+                  <select className="field !min-h-0 !py-2 text-xs font-semibold" value={positions[index]} onClick={(e) => e.stopPropagation()} onChange={(e) => setPhotoSlot(index, e.target.value as InvitationPhotoSlot)}>
+                    {INVITATION_PHOTO_SLOTS.map((slot) => <option key={slot.value} value={slot.value}>{slot.label}</option>)}
+                  </select>
+                  <input className="field !min-h-0 !py-2 text-xs font-handwritten" value={captions[index] || ""} maxLength={120} placeholder="Polaroid caption" onClick={(e) => e.stopPropagation()} onChange={(e) => setCaptions((current) => current.map((value, i) => i === index ? e.target.value : value))} />
+                </div>
+                <button type="button" className="btn-icon !h-7 !w-7" onClick={(e) => { e.stopPropagation(); removePhoto(index); }}><X size={12} /></button>
+              </div>
+            ))}
+          </div>
+          {photos.length < MAX_INVITATION_PHOTOS ? (
+            <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 border border-dashed border-ink/20 p-3 text-[10px] font-bold uppercase tracking-widest hover:border-tomato hover:text-tomato">
+              <ImagePlus size={14} />{uploading ? "Uploading…" : "Add photo"}
+              <input type="file" accept="image/*" className="sr-only" disabled={uploading} onChange={(event) => {
+                const input = event.currentTarget;
+                const file = input.files?.[0];
+                if (!file) return;
+                startUpload(async () => {
+                  setError(null);
+                  try {
+                    const photo = await compressImageForUpload(file);
+                    const fd = new FormData();
+                    fd.set("photo", photo);
+                    const result = await uploadInvitationPhoto(party.id, fd);
+                    if (result?.error) return setError(result.error);
+                    if (result.url) {
+                      setPhotos((current) => [...current, result.url!].slice(0, MAX_INVITATION_PHOTOS));
+                      setPositions((current) => { const used = new Set(current); const next = DEFAULT_INVITATION_SLOTS.find((slot) => !used.has(slot)) || "rsvp_bottom"; return [...current, next].slice(0, MAX_INVITATION_PHOTOS); });
+                      setCrops((current) => [...current, normalizeCrop(null)].slice(0, MAX_INVITATION_PHOTOS));
+                      setCaptions((current) => [...current, ""].slice(0, MAX_INVITATION_PHOTOS));
+                      setSelectedPhoto(photos.length);
+                    }
+                  } catch (uploadError) {
+                    setError(uploadError instanceof Error ? uploadError.message : "Could not upload photo.");
+                  } finally {
+                    input.value = "";
+                  }
+                });
+              }} />
+            </label>
+          ) : null}
+          {photos[selectedPhoto] ? <button type="button" className="btn-secondary mt-3 w-full !min-h-9 text-[10px]" onClick={() => setCropOpen(true)}><Crop size={14}/> Crop selected photo</button> : null}
+        </div>
 
         <div className="card p-5">
           <div className="flex items-center justify-between gap-3">
@@ -211,90 +276,30 @@ export function InvitationEditor({ party, menu, shareToken }: { party: PartyDraf
             )) : <p className="text-xs text-ink/45">Add dishes to the party menu and they will appear here automatically.</p>}
           </div>
         </div>
-
-        <div className="card p-5">
-          <div className="flex items-center justify-between gap-3"><div><p className="eyebrow">Color scheme</p><p className="mt-1 text-xs text-ink/45">The same scheme drives the active party UI and invitation.</p></div><span className="text-[10px] font-bold uppercase tracking-widest text-ink/40">{theme.name}</span></div>
-          <div className="mt-3 grid grid-cols-5 gap-2">{PARTY_THEMES.map((item) => <button key={item.key} type="button" onClick={() => setScheme(item.key)} className={`group border p-1.5 transition hover:-translate-y-0.5 hover:shadow-sm ${scheme === item.key ? "border-ink" : "border-ink/10"}`} title={item.name} style={{ background: item.paper }}><div className="flex h-6 overflow-hidden">{[item.primary, item.secondary, item.olive].map((color) => <span key={color} className="flex-1" style={{ background: color }} />)}</div></button>)}</div>
-        </div>
-
-        <div className="card p-5">
-          <div className="flex items-center justify-between"><div><p className="eyebrow">Photos</p><p className="mt-1 text-xs text-ink/45">Choose 1–5 photos, reorder them, and crop each one directly.</p></div><span className="text-xs font-bold">{photos.length}/5</span></div>
-          <div className="mt-3 space-y-2">
-            {photos.map((photo, index) => (
-              <div key={`${photo}-${index}`} className={`grid grid-cols-[64px_1fr_auto] items-center gap-3 border p-2 ${selectedPhoto === index ? "border-tomato" : "border-ink/12"}`} onClick={() => setSelectedPhoto(index)}>
-                <CroppedImage src={photo} alt="" crop={crops[index]} className="h-14 w-16" />
-                <span className="truncate text-xs font-semibold">{photoSlotLabels[index] || `Photo ${index + 1}`}</span>
-                <div className="flex">
-                  <button type="button" className="btn-icon !h-7 !w-7" onClick={(e) => { e.stopPropagation(); movePhoto(index, -1); }}><ArrowUp size={12} /></button>
-                  <button type="button" className="btn-icon !h-7 !w-7" onClick={(e) => { e.stopPropagation(); movePhoto(index, 1); }}><ArrowDown size={12} /></button>
-                  {photos.length > 1 ? <button type="button" className="btn-icon !h-7 !w-7" onClick={(e) => { e.stopPropagation(); removePhoto(index); }}><X size={12} /></button> : null}
-                </div>
-              </div>
-            ))}
-          </div>
-          {photos.length < 5 ? (
-            <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 border border-dashed border-ink/20 p-3 text-[10px] font-bold uppercase tracking-widest hover:border-tomato hover:text-tomato">
-              <ImagePlus size={14} />{uploading ? "Uploading…" : "Add photo"}
-              <input type="file" accept="image/*" className="sr-only" disabled={uploading} onChange={(event) => {
-                const input = event.currentTarget;
-                const file = input.files?.[0];
-                if (!file) return;
-                startUpload(async () => {
-                  setError(null);
-                  try {
-                    const photo = await compressImageForUpload(file);
-                    const fd = new FormData();
-                    fd.set("photo", photo);
-                    const result = await uploadInvitationPhoto(party.id, fd);
-                    if (result?.error) return setError(result.error);
-                    if (result.url) {
-                      setPhotos((current) => [...current, result.url!].slice(0, 5));
-                      setPositions((current) => [...current, "50% 50%"].slice(0, 5));
-                      setCrops((current) => [...current, normalizeCrop(null)].slice(0, 5));
-                      setSelectedPhoto(photos.length);
-                    }
-                  } catch (uploadError) {
-                    setError(uploadError instanceof Error ? uploadError.message : "Could not upload photo.");
-                  } finally {
-                    input.value = "";
-                  }
-                });
-              }} />
-            </label>
-          ) : null}
-          {photos[selectedPhoto] ? <button type="button" className="btn-secondary mt-3 w-full !min-h-9 text-[10px]" onClick={() => setCropOpen(true)}><Crop size={14}/> Crop selected photo</button> : null}
-        </div>
         </aside>
 
-        <section className="min-h-0 overflow-hidden border border-ink/12 bg-[#e7e1d7] p-3 md:p-6">
-          <div className="mx-auto h-[calc(100dvh-230px)] min-h-[640px] max-w-[1000px] overflow-y-auto bg-paper shadow-[0_24px_70px_rgba(41,35,31,.15)]" style={partyThemeCssVars(scheme)}>
+        <section className="flex min-h-0 flex-col overflow-hidden border border-ink/12 bg-[#e7e1d7] p-3 md:p-6 lg:h-full">
+          <div className="h-[min(70dvh,36rem)] min-h-0 flex-1 overflow-y-auto bg-paper shadow-[0_24px_70px_rgba(41,35,31,.15)] lg:h-full" style={partyThemeCssVars(scheme)}>
           <div className="paper-noise min-h-full bg-paper text-ink">
             <section className="grid items-center gap-6 px-7 py-10 lg:grid-cols-[1.05fr_.95fr]">
-              <div className="relative min-h-[500px]">
-                <div className="absolute left-0 top-3 h-[72%] w-[79%] -rotate-[2deg] bg-[#fffaf1] p-2 pb-9 shadow-paper">
-                  <CroppedImage src={mainPhoto} alt="Invitation photo" crop={crops[0]} className="h-full w-full" />
-                  <p className="absolute bottom-2 left-4 font-handwritten text-xs">{party.name.toLowerCase()}</p>
-                </div>
-                {photos[1] ? (
-                  <div className="absolute bottom-0 right-0 h-[44%] w-[47%] rotate-[4deg] bg-[#fffaf1] p-2 pb-8 shadow-paper">
-                    <CroppedImage src={secondPhoto} alt="Dinner detail" crop={crops[1]} className="h-full w-full" />
-                    <p className="absolute bottom-2 left-3 font-handwritten text-[10px]">come hungry</p>
-                  </div>
-                ) : null}
+              <div className={overviewPhoto && overviewRight ? "min-h-[420px]" : "min-h-[500px]"}>
+                <OverviewPolaroids
+                  left={overviewPhoto}
+                  right={overviewRight}
+                  variant="preview"
+                  empty={<div className="grid min-h-[470px] w-full place-items-center border border-dashed border-ink/15 text-xs text-ink/35">Assign a photo to Overview</div>}
+                />
               </div>
               <div>
                 <p className="font-handwritten text-lg text-tomato">You’re invited to</p>
                 <h1 className="mt-3 font-editorial text-6xl font-semibold leading-[.84] tracking-[-.055em]">{headline}</h1>
                 <div className="mt-7 border-t border-ink/20 pt-4">
-                  <p className="text-[10px] font-bold uppercase tracking-[.18em]">{date} · {time}</p>
+                  <p className="text-[10px] font-bold uppercase tracking-[.18em]">{date} · {time} {timezoneShortLabel(timezone)}</p>
                   <p className="mt-2 flex items-center gap-2 text-xs text-ink/55"><MapPin size={13}/> {location || "Location to come"}</p>
                 </div>
                 <p className="mt-5 font-editorial text-xl leading-relaxed">{message}</p>
                 <div className="mt-7 flex flex-wrap gap-3">
                   <button type="button" className="btn-primary">{rsvpLabel}</button>
-                  <a href={previewCalendar} target="_blank" rel="noreferrer" className="btn-secondary">
-                    <CalendarPlus size={14} /> Add to Google Calendar
-                  </a>
                 </div>
               </div>
             </section>
@@ -310,14 +315,11 @@ export function InvitationEditor({ party, menu, shareToken }: { party: PartyDraf
                 <article className="rounded-[1.5rem] bg-white/[0.06] p-5"><Sparkles className="text-orange" size={18}/><p className="mt-4 text-[10px] font-bold uppercase tracking-widest text-paper/45">Dress</p><p className="mt-2 font-editorial text-2xl font-semibold">{dressCode}</p></article>
                 <article className="rounded-[1.5rem] bg-white/[0.06] p-5"><Wine className="text-orange" size={18}/><p className="mt-4 text-[10px] font-bold uppercase tracking-widest text-paper/45">Bring</p><p className="mt-2 font-editorial text-2xl font-semibold">{bring}</p></article>
               </div>
-              {photos[2] || photos[3] ? <div className={`mt-3 grid gap-3 ${photos[2] && photos[3] ? "md:grid-cols-2" : "grid-cols-1"}`}>
-                {photos[2] ? <CroppedImage src={photos[2]} alt="Menu photo one" crop={crops[2]} className="h-64 w-full rounded-[1.5rem]" /> : null}
-                {photos[3] ? <CroppedImage src={photos[3]} alt="Menu photo two" crop={crops[3]} className="h-64 w-full rounded-[1.5rem]" /> : null}
-              </div> : null}
+              {menuLeft || menuRight ? <div className="mt-7 grid grid-cols-[2fr_1fr] items-center gap-4">{menuLeft ? <PolaroidPhoto src={menuLeft.src} crop={menuLeft.crop} caption={menuLeft.caption} alt="Menu left" className="w-3/4 -rotate-[1deg]" /> : <div/>}{menuRight ? <PolaroidPhoto src={menuRight.src} crop={menuRight.crop} caption={menuRight.caption} alt="Menu right" className="rotate-[1deg]" /> : <div/>}</div> : null}
             </section>
 
             <section className="grid gap-8 px-8 py-12 lg:grid-cols-[.8fr_1.2fr]">
-              <div><p className="font-handwritten text-lg text-tomato">Save your seat</p><h2 className="mt-2 font-editorial text-5xl font-semibold leading-[.9]">Will you join us?</h2><p className="mt-4 text-xs leading-relaxed text-ink/55">Allergies are selected from ingredients in the set menu so the kitchen can match them reliably.</p>{photos[4] ? <CroppedImage src={photos[4]} alt="RSVP photo" crop={crops[4]} className="mt-6 h-56 w-full rounded-[1.25rem]" /> : null}</div>
+              <div><p className="font-handwritten text-lg text-tomato">Save your seat</p><h2 className="mt-2 font-editorial text-5xl font-semibold leading-[.9]">Will you join us?</h2><p className="mt-4 text-xs leading-relaxed text-ink/55">Allergies are selected from ingredients in the set menu so the kitchen can match them reliably.</p>{rsvpBottom ? <PolaroidPhoto src={rsvpBottom.src} crop={rsvpBottom.crop} caption={rsvpBottom.caption} alt="RSVP photo" className="mt-6 rotate-[1deg]" imageClassName="h-56 w-full" /> : null}</div>
               <div className="card p-6">
                 <div className="field text-ink/35">Your name</div>
                 <div className="mt-4 grid grid-cols-3 gap-2">{["Attending", "Maybe", "Can’t make it"].map((label, i) => <div key={label} className={`rounded-2xl border px-2 py-3 text-center text-[10px] font-bold ${i === 0 ? "border-ink bg-ink text-paper" : "border-ink/15"}`}>{label}</div>)}</div>

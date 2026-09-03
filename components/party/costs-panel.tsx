@@ -1,6 +1,7 @@
 "use client";
 
 import { ReceiptScanner } from "@/components/party/receipt-scanner";
+import { usePartyAccess } from "@/lib/party/access-client";
 import { CircleDollarSign, FileScan, Receipt, Split } from "lucide-react";
 import { useState } from "react";
 
@@ -28,6 +29,11 @@ export function CostsPanel({
   receiptCount?: number;
 }) {
   const [split, setSplit] = useState(Math.max(1, guestCount || 8));
+  const [includeHost, setIncludeHost] = useState(true);
+  const [includeHelpers, setIncludeHelpers] = useState(true);
+  const [useAttending, setUseAttending] = useState(false);
+  const effectiveSplit = useAttending ? Math.max(1, guestCount) : Math.max(1, split + (includeHost ? 0 : -1) + (includeHelpers ? 0 : -1));
+  const { canEdit } = usePartyAccess();
   const remaining = Math.max(0, estimate - actualLogged);
 
   return (
@@ -37,7 +43,7 @@ export function CostsPanel({
           <h2 className="font-editorial text-4xl font-semibold sm:text-5xl">Cost Metrics</h2>
           <p className="mt-2 max-w-xl text-sm text-ink/45">Scan store receipts, review uncertain matches, and turn estimates into actual ingredient costs.</p>
         </div>
-        <ReceiptScanner partyId={partyId} />
+        {canEdit ? <ReceiptScanner partyId={partyId} /> : null}
       </section>
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-[1.2fr_.8fr_.8fr]">
         <article className="rounded-[1.9rem] bg-ink p-6 text-paper sm:col-span-2 md:p-8 xl:col-span-1">
@@ -55,10 +61,10 @@ export function CostsPanel({
         </article>
         <article className="rounded-[1.75rem] bg-orange p-6 text-paper">
           <p className="eyebrow !text-paper/55">Cost per person</p>
-          <p className="mt-4 font-editorial text-4xl font-semibold sm:text-5xl">${(estimate / split).toFixed(2)}</p>
+          <p className="mt-4 font-editorial text-4xl font-semibold sm:text-5xl">${(estimate / effectiveSplit).toFixed(2)}</p>
           <div className="mt-4 flex items-center gap-2">
             <button onClick={() => setSplit(Math.max(1, split - 1))} className="h-8 w-8 rounded-full border border-paper/30">−</button>
-            <span className="min-w-20 text-center text-xs font-bold">{split} ways</span>
+            <span className="min-w-20 text-center text-xs font-bold">{effectiveSplit} ways</span>
             <button onClick={() => setSplit(split + 1)} className="h-8 w-8 rounded-full border border-paper/30">+</button>
           </div>
         </article>
@@ -105,11 +111,11 @@ export function CostsPanel({
             <Split size={21} className="text-tomato" />
             <h3 className="mt-5 font-editorial text-3xl font-semibold">Split settings</h3>
             <div className="mt-5 space-y-3 text-sm">
-              <label className="flex items-center justify-between gap-3"><span>Include host</span><input type="checkbox" defaultChecked /></label>
-              <label className="flex items-center justify-between gap-3"><span>Include helpers</span><input type="checkbox" defaultChecked /></label>
-              <label className="flex items-center justify-between gap-3"><span>Use attending guests</span><input type="checkbox" /></label>
+              <label className="flex items-center justify-between gap-3"><span>Include host</span><input type="checkbox" checked={includeHost} onChange={(e)=>setIncludeHost(e.target.checked)} /></label>
+              <label className="flex items-center justify-between gap-3"><span>Include helpers</span><input type="checkbox" checked={includeHelpers} onChange={(e)=>setIncludeHelpers(e.target.checked)} /></label>
+              <label className="flex items-center justify-between gap-3"><span>Use attending guests</span><input type="checkbox" checked={useAttending} onChange={(e)=>setUseAttending(e.target.checked)} /></label>
             </div>
-            <button className="btn-secondary mt-6 w-full">Create cost summary</button>
+            <button className="btn-secondary mt-6 w-full" onClick={() => { const text = `plated. cost summary\nEstimated total: $${estimate.toFixed(2)}\nActual spend: $${actualLogged.toFixed(2)}\nSplit: ${effectiveSplit} ways\nEstimated per person: $${(estimate/effectiveSplit).toFixed(2)}`; const blob = new Blob([text], {type:"text/plain"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download="plated-cost-summary.txt"; a.click(); URL.revokeObjectURL(url); }}>Create cost summary</button>
           </article>
           <article className="rounded-[1.75rem] bg-tomato p-5 text-paper">
             <FileScan size={21} />

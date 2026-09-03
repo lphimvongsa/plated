@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { safeNextPath, siteUrl } from "@/lib/site";
 import { createClient } from "@/lib/supabase/server";
 
 export async function signUpWithEmail(formData: FormData) {
@@ -8,13 +9,14 @@ export async function signUpWithEmail(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
+  const next = safeNextPath(String(formData.get("next") ?? ""));
 
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
       data: { name },
-      emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/auth/callback`,
+      emailRedirectTo: `${siteUrl()}/auth/callback?next=${encodeURIComponent(next)}`,
     },
   });
 
@@ -23,7 +25,7 @@ export async function signUpWithEmail(formData: FormData) {
   }
 
   if (data.session) {
-    redirect("/onboarding");
+    redirect(next !== "/app" ? `/onboarding?next=${encodeURIComponent(next)}` : "/onboarding");
   }
 
   return {
@@ -36,6 +38,7 @@ export async function signInWithEmail(formData: FormData) {
   const supabase = await createClient();
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
+  const next = safeNextPath(String(formData.get("next") ?? ""));
 
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) {
@@ -56,11 +59,25 @@ export async function signInWithEmail(formData: FormData) {
     .eq("id", user.id)
     .maybeSingle();
 
-  redirect(profile?.onboarding_complete ? "/app" : "/onboarding");
+  if (!profile?.onboarding_complete) {
+    redirect(next !== "/app" ? `/onboarding?next=${encodeURIComponent(next)}` : "/onboarding");
+  }
+  redirect(next);
 }
 
 export async function signOut() {
   const supabase = await createClient();
   await supabase.auth.signOut();
   redirect("/");
+}
+
+
+export async function requestPasswordReset(email: string) {
+  const supabase = await createClient();
+  const value = email.trim();
+  if (!value) return { error: "Enter your email first." };
+  const origin = siteUrl();
+  const { error } = await supabase.auth.resetPasswordForEmail(value, { redirectTo: `${origin}/auth/login?reset=1` });
+  if (error) return { error: error.message };
+  return { error: null, message: "Password reset email sent." };
 }

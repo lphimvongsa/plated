@@ -4,7 +4,8 @@ import { ReceiptScanner } from "@/components/party/receipt-scanner";
 import { getPartyCostSummary } from "@/lib/party/cost-summary";
 import { formatGroceryQuantity } from "@/lib/recipes/quantity";
 import { createClient } from "@/lib/supabase/server";
-import { CircleDollarSign, PackageCheck, Plus, ShoppingBasket } from "lucide-react";
+import { CircleDollarSign, PackageCheck, ShoppingBasket } from "lucide-react";
+import { AddGroceryItem } from "@/components/party/add-grocery-item";
 import { notFound } from "next/navigation";
 
 export default async function ShoppingPage({ params }: { params: Promise<{ partyId: string }> }) {
@@ -57,9 +58,7 @@ export default async function ShoppingPage({ params }: { params: Promise<{ party
         </div>
         <div className="flex flex-wrap gap-2">
           <ReceiptScanner partyId={partyId} />
-          <button className="btn-secondary" disabled>
-            <Plus size={16} /> Add item
-          </button>
+          <AddGroceryItem partyId={partyId} />
         </div>
       </section>
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

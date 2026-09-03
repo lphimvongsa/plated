@@ -1,6 +1,7 @@
 "use client";
 
 import { toggleGroceryOwned, toggleGroceryPurchased } from "@/lib/actions/parties";
+import { usePartyAccess } from "@/lib/party/access-client";
 import { Check } from "lucide-react";
 import { useTransition } from "react";
 
@@ -16,11 +17,12 @@ export function GroceryPurchasedToggle({
   owned: boolean;
 }) {
   const [pending, startTransition] = useTransition();
+  const { canEdit } = usePartyAccess();
 
   return (
     <button
       type="button"
-      disabled={owned || pending}
+      disabled={owned || pending || !canEdit}
       onClick={() =>
         startTransition(async () => {
           await toggleGroceryPurchased(itemId, !purchased, partyId);
@@ -50,11 +52,12 @@ export function GroceryOwnedToggle({
   owned: boolean;
 }) {
   const [pending, startTransition] = useTransition();
+  const { canEdit } = usePartyAccess();
 
   return (
     <button
       type="button"
-      disabled={pending}
+      disabled={pending || !canEdit}
       onClick={() =>
         startTransition(async () => {
           await toggleGroceryOwned(itemId, !owned, partyId);

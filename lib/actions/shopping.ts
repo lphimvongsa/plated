@@ -11,6 +11,7 @@ import {
   resolveCatalogIngredient,
   type WeightSystem,
 } from "@/lib/recipes/weight-convert";
+import { requirePartyEditor } from "@/lib/party/access";
 import { createClient } from "@/lib/supabase/server";
 import { claimPartyRefresh, finishPartyRefresh } from "@/lib/party/refresh-claim";
 
@@ -253,7 +254,9 @@ async function regenerateShoppingListUnlocked(partyId: string) {
 }
 
 export async function regenerateShoppingList(partyId: string) {
-  const supabase = await createClient();
+  const access = await requirePartyEditor(partyId);
+  if (access.error) return { error: access.error };
+  const supabase = access.supabase;
   const claim = await claimPartyRefresh(supabase, partyId, "shopping");
   if (!claim.token) return { error: claim.error };
 
@@ -273,7 +276,9 @@ export async function addManualGroceryItem(
   partyId: string,
   input: { name: string; quantity?: string | null; unit?: string | null; category?: string | null },
 ) {
-  const supabase = await createClient();
+  const access = await requirePartyEditor(partyId);
+  if (access.error) return { error: access.error };
+  const { supabase } = access;
   const { data: maxOrder } = await supabase
     .from("grocery_items")
     .select("sort_order")

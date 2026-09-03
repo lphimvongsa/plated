@@ -152,8 +152,8 @@ export default async function PartyOverviewPage({ params }: { params: Promise<{ 
                 },
                 {
                   complete: checklistDone[4],
-                  title: "Send invitations",
-                  detail: guestList.length ? `${pending} awaiting reply` : "No guests yet",
+                  title: "Share invitation",
+                  detail: guestList.length ? `${pending} awaiting reply` : "Copy the group link",
                   href: `${base}/guests`,
                 },
               ] as const

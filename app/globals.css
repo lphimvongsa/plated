@@ -301,7 +301,8 @@ img {
 }
 
 /* Mobile normalization: every authenticated page should stay inside the viewport. */
-html, body { max-width: 100%; overflow-x: hidden; }
+/* Clip instead of hidden so nested horizontal scrollers (timeline) still receive pan gestures. */
+html, body { max-width: 100%; overflow-x: hidden; overflow-x: clip; }
 main, section, article, aside, nav, form, .card, .editorial-panel { min-width: 0; }
 input, textarea, select, video, canvas { max-width: 100%; }
 

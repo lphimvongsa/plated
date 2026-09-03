@@ -2,10 +2,18 @@
 
 import { CropEditor } from "@/components/media/crop-editor";
 import { CroppedImage } from "@/components/media/cropped-image";
-import { deleteParty, updatePartySettings } from "@/lib/actions/parties";
+import { archiveParty, deleteParty, duplicateParty, updatePartySettings } from "@/lib/actions/parties";
+import {
+  DEFAULT_INVITATION_SLOTS,
+  INVITATION_PHOTO_SLOTS,
+  normalizeInvitationPhotoSlot,
+  type InvitationPhotoSlot,
+} from "@/lib/invitation-photo-slots";
 import { compressImageForUpload } from "@/lib/media/compress";
-import { cropFromJson, normalizeCrop, type CropRect } from "@/lib/media/crop";
+import { cropArrayFromJson, cropArrayWithCaptions, cropFromJson, normalizeCrop, photoCaptionArrayFromJson, type CropRect } from "@/lib/media/crop";
 import { formatPartyEndClock, partyDurationOptions } from "@/lib/party/duration";
+import { TimezoneSelect } from "@/components/party/timezone-select";
+import { DEFAULT_TIMEZONE, normalizeTimezone } from "@/lib/timezone";
 import { PARTY_THEMES } from "@/lib/party/themes";
 import { Archive, Copy, Crop, ExternalLink, ImageIcon, Save, Trash2 } from "lucide-react";
 import Link from "next/link";
@@ -23,6 +31,7 @@ type SettingsParty = {
   planning_guest_count: number;
   date: string;
   time: string;
+  timezone: string;
   duration_minutes: number;
   prep_date: string;
   hero_image: string | null;
@@ -30,6 +39,8 @@ type SettingsParty = {
   cover_crop: unknown;
   color_scheme: string;
   invitation_photo_urls: string[];
+  invitation_photo_positions: string[];
+  invitation_photo_crops: unknown;
 };
 
 const STOCK_PHOTOS = Array.from({ length: 10 }, (_, i) => `/photos/party-${String(i + 1).padStart(2, "0")}.webp`);
@@ -46,20 +57,45 @@ export function PartySettingsForm({ party }: { party: SettingsParty }) {
   const [coverUploadPreview, setCoverUploadPreview] = useState<string | null>(null);
   const [cropOpen, setCropOpen] = useState(false);
   const [scheme, setScheme] = useState(party.color_scheme || PARTY_THEMES[0].key);
+  const [invitePositions,setInvitePositions]=useState<InvitationPhotoSlot[]>(() => {
+    const used = new Set<InvitationPhotoSlot>();
+    return party.invitation_photo_urls.map((_, i) => {
+      const preferred = normalizeInvitationPhotoSlot(party.invitation_photo_positions[i] || "", i);
+      const slot = used.has(preferred)
+        ? DEFAULT_INVITATION_SLOTS.find((candidate) => !used.has(candidate)) ?? preferred
+        : preferred;
+      used.add(slot);
+      return slot;
+    });
+  });
+  const [inviteCrops] = useState<CropRect[]>(() => cropArrayFromJson(party.invitation_photo_crops, party.invitation_photo_urls.length));
+  const [inviteCaptions, setInviteCaptions] = useState<string[]>(() => photoCaptionArrayFromJson(party.invitation_photo_crops, party.invitation_photo_urls.length));
   const [date, setDate] = useState(party.date);
   const [time, setTime] = useState(party.time);
+  const [timezone, setTimezone] = useState(normalizeTimezone(party.timezone || DEFAULT_TIMEZONE));
   const [durationMinutes, setDurationMinutes] = useState(party.duration_minutes);
   const displayedCover = coverUploadPreview || heroImage;
   const selectedTheme = useMemo(() => PARTY_THEMES.find((item) => item.key === scheme) ?? PARTY_THEMES[0], [scheme]);
   const durationChoices = useMemo(() => partyDurationOptions(durationMinutes), [durationMinutes]);
-  const endsAround = useMemo(() => formatPartyEndClock(date, time, durationMinutes), [date, time, durationMinutes]);
+  const endsAround = useMemo(() => formatPartyEndClock(date, time, durationMinutes, timezone), [date, time, durationMinutes, timezone]);
   const existingPartyPhotos = useMemo(
     () => Array.from(new Set([party.hero_image, ...party.invitation_photo_urls].filter((value): value is string => Boolean(value)))),
     [party.hero_image, party.invitation_photo_urls],
   );
 
+  const setInvitePosition = (index: number, slot: InvitationPhotoSlot) => {
+    setInvitePositions((current) => {
+      const next = [...current];
+      const previous = next[index];
+      const occupiedIndex = next.findIndex((value, candidateIndex) => candidateIndex !== index && value === slot);
+      next[index] = slot;
+      if (occupiedIndex >= 0 && previous) next[occupiedIndex] = previous;
+      return next;
+    });
+  };
+
   return (
-    <div className="space-y-8">
+    <div className="min-h-0 flex-1 space-y-8 overflow-y-auto pb-8">
       <section className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="eyebrow">Party controls</p>
@@ -84,6 +120,9 @@ export function PartySettingsForm({ party }: { party: SettingsParty }) {
             formData.set("cover_crop", JSON.stringify(coverCrop));
             formData.set("color_scheme", scheme);
             formData.set("duration_minutes", String(durationMinutes));
+            formData.delete("invitation_photo_positions");
+            invitePositions.forEach(value=>formData.append("invitation_photo_positions",value));
+            formData.set("invitation_photo_crops", JSON.stringify(cropArrayWithCaptions(inviteCrops, inviteCaptions)));
             setMessage(null);
             setError(null);
             startTransition(async () => {
@@ -107,6 +146,7 @@ export function PartySettingsForm({ party }: { party: SettingsParty }) {
               <label className="sm:col-span-2"><span className="mb-2 block text-xs font-semibold">Party name</span><input className="field" name="name" defaultValue={party.name} required /></label>
               <label><span className="mb-2 block text-xs font-semibold">Date</span><input className="field" name="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
               <label><span className="mb-2 block text-xs font-semibold">Start time</span><input className="field" name="time" type="time" value={time} onChange={(e) => setTime(e.target.value)} /></label>
+              <TimezoneSelect name="timezone" value={timezone} onChange={setTimezone} />
               <label>
                 <span className="mb-2 block text-xs font-semibold">Duration</span>
                 <select className="field" name="duration_minutes" value={durationMinutes} onChange={(e) => setDurationMinutes(Number(e.target.value))}>
@@ -170,6 +210,9 @@ export function PartySettingsForm({ party }: { party: SettingsParty }) {
             </div>
           </article>
 
+
+          {party.invitation_photo_urls.length ? <article className="card p-6"><p className="eyebrow">Invitation photo placement</p><h3 className="mt-2 font-editorial text-3xl font-semibold">Place each photo exactly where you want it.</h3><p className="mt-2 text-sm text-ink/50">A single Overview photo stays full-size. Add Overview · right for a stacked Polaroid collage. Menu keeps left/right positions, and RSVP has one bottom slot.</p><div className="mt-5 space-y-3">{party.invitation_photo_urls.map((photo,index)=><div key={`${photo}-${index}`} className="grid grid-cols-[64px_1fr] gap-3 border border-ink/10 p-2"><img src={photo} alt="" className="h-16 w-16 object-cover"/><div className="space-y-2"><select className="field !py-2 text-xs" value={invitePositions[index]} onChange={e=>setInvitePosition(index, e.target.value as InvitationPhotoSlot)}>{INVITATION_PHOTO_SLOTS.map((slot)=><option key={slot.value} value={slot.value}>{slot.label}</option>)}</select><input className="field !py-2 font-handwritten text-xs" value={inviteCaptions[index] || ""} maxLength={120} placeholder="Polaroid caption" onChange={e=>setInviteCaptions(cur=>cur.map((v,i)=>i===index?e.target.value:v))}/></div></div>)}</div></article> : null}
+
           <article className="card p-6">
             <p className="eyebrow">Theme and invite details</p>
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
@@ -184,7 +227,7 @@ export function PartySettingsForm({ party }: { party: SettingsParty }) {
         </form>
 
         <aside className="space-y-4">
-          <article className="card p-5"><p className="eyebrow">Party actions</p><div className="mt-5 space-y-2"><button type="button" className="btn-secondary w-full justify-start" disabled><Copy size={16} /> Duplicate party</button><button type="button" className="btn-secondary w-full justify-start" disabled><Archive size={16} /> Archive party</button></div></article>
+          <article className="card p-5"><p className="eyebrow">Party actions</p><div className="mt-5 space-y-2"><button type="button" className="btn-secondary w-full justify-start" disabled={pending} onClick={() => startTransition(async () => { const result = await duplicateParty(party.id); if (result?.error) setError(result.error); })}><Copy size={16} /> Duplicate party</button><button type="button" className="btn-secondary w-full justify-start" disabled={pending} onClick={() => { if (!window.confirm("Archive this party? It will remain in your account but be marked cancelled.")) return; startTransition(async () => { const result = await archiveParty(party.id); if (result?.error) setError(result.error); else window.location.reload(); }); }}><Archive size={16} /> Archive party</button></div></article>
           <article className="rounded-[2px] border border-tomato/25 bg-tomato/5 p-5"><p className="font-editorial text-2xl font-semibold text-tomato">Danger zone</p><p className="mt-2 text-xs leading-relaxed text-ink/50">Deleting a party will remove guests, assignments, receipts, and party-specific recipe edits.</p><button type="button" disabled={deleting} className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-tomato" onClick={() => { if (!window.confirm("Delete this party permanently?")) return; startDelete(async () => { const result = await deleteParty(party.id); if (result?.error) setError(result.error); }); }}><Trash2 size={15} /> {deleting ? "Deleting…" : "Delete party"}</button></article>
         </aside>
       </section>

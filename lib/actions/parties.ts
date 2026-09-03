@@ -4,9 +4,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { Database, Json } from "@/lib/database.types";
 import { durationMinutesBetween, parsePartyDurationMinutes, partyEndsAt } from "@/lib/party/duration";
+import { normalizeTimezone, zonedDateTimeToUtc } from "@/lib/timezone";
 import { schedulePartyDerivedRefresh } from "@/lib/party/refresh-derived";
 import { normalizePhone } from "@/lib/outbound/phone";
 import { friendlyStorageUploadError, withStorageUploadRetry } from "@/lib/media/storage-upload";
+import { MAX_INVITATION_PHOTOS } from "@/lib/invitation-photo-slots";
 import { createClient } from "@/lib/supabase/server";
 
 type PartyUpdate = Database["public"]["Tables"]["parties"]["Update"];
@@ -112,8 +114,15 @@ export async function updatePartySettings(partyId: string, formData: FormData) {
   const planningGuestCountRaw = formData.get("planning_guest_count");
   const date = String(formData.get("date") ?? "");
   const time = String(formData.get("time") ?? "");
+  const timezone = normalizeTimezone(String(formData.get("timezone") ?? ""));
   const durationMinutes = parsePartyDurationMinutes(formData.get("duration_minutes"));
   const prepDate = String(formData.get("prep_date") ?? "");
+  const invitationPhotoPositions = formData.getAll("invitation_photo_positions").map(String).filter(Boolean);
+  let invitationPhotoCrops: Json[] | null = null;
+  try {
+    const parsed = JSON.parse(String(formData.get("invitation_photo_crops") ?? "null"));
+    if (Array.isArray(parsed)) invitationPhotoCrops = parsed as Json[];
+  } catch { invitationPhotoCrops = null; }
 
   const patch: PartyUpdate = {
     name,
@@ -126,7 +135,10 @@ export async function updatePartySettings(partyId: string, formData: FormData) {
     color_scheme: colorScheme,
     cover_position: coverPosition,
     cover_crop: coverCrop,
+    timezone,
     ...(heroImage ? { hero_image: heroImage } : {}),
+    ...(invitationPhotoPositions.length ? { invitation_photo_positions: invitationPhotoPositions } : {}),
+    ...(invitationPhotoCrops ? { invitation_photo_crops: invitationPhotoCrops } : {}),
   };
 
   if (planningGuestCountRaw != null && planningGuestCountRaw !== "") {
@@ -137,13 +149,16 @@ export async function updatePartySettings(partyId: string, formData: FormData) {
   }
 
   if (date && time) {
-    const startsAt = new Date(`${date}T${time}:00`);
-    patch.starts_at = startsAt.toISOString();
-    patch.ends_at = partyEndsAt(startsAt, durationMinutes).toISOString();
+    const startsAt = zonedDateTimeToUtc(date, time, timezone);
+    if (startsAt) {
+      patch.starts_at = startsAt.toISOString();
+      patch.ends_at = partyEndsAt(startsAt, durationMinutes).toISOString();
+    }
   }
 
   if (prepDate) {
-    patch.prep_starts_at = new Date(`${prepDate}T09:00:00`).toISOString();
+    const prepAt = zonedDateTimeToUtc(prepDate, "09:00", timezone);
+    if (prepAt) patch.prep_starts_at = prepAt.toISOString();
   }
 
   const coverFile = formData.get("cover_photo");
@@ -348,7 +363,7 @@ export async function updateInvitationDraft(partyId: string, formData: FormData)
     .maybeSingle();
   if (!party) return { error: "Party not found." };
 
-  const photos = formData.getAll("invitation_photo_urls").map(String).filter(Boolean).slice(0, 5);
+  const photos = formData.getAll("invitation_photo_urls").map(String).filter(Boolean).slice(0, MAX_INVITATION_PHOTOS);
   const photoPositions = formData.getAll("invitation_photo_positions").map(String).slice(0, photos.length);
   let photoCrops: Json[] = [];
   let menuOverrides: Record<string, { title?: string; description?: string }> = {};
@@ -362,9 +377,11 @@ export async function updateInvitationDraft(partyId: string, formData: FormData)
   } catch { menuOverrides = {}; }
   const date = String(formData.get("date") ?? "");
   const time = String(formData.get("time") ?? "");
+  const timezone = normalizeTimezone(String(formData.get("timezone") ?? ""));
   const patch: PartyUpdate = {
     location: String(formData.get("location") ?? "").trim(),
     color_scheme: String(formData.get("color_scheme") ?? "tomato-cream"),
+    timezone,
     invitation_headline: String(formData.get("invitation_headline") ?? "").trim() || null,
     invitation_message: String(formData.get("invitation_message") ?? "").trim() || null,
     invitation_signoff: String(formData.get("invitation_signoff") ?? "").trim() || null,
@@ -378,10 +395,12 @@ export async function updateInvitationDraft(partyId: string, formData: FormData)
     invitation_draft: true,
   };
   if (date && time) {
-    const startsAt = new Date(`${date}T${time}:00`);
-    const durationMinutes = durationMinutesBetween(party.starts_at, party.ends_at);
-    patch.starts_at = startsAt.toISOString();
-    patch.ends_at = partyEndsAt(startsAt, durationMinutes).toISOString();
+    const startsAt = zonedDateTimeToUtc(date, time, timezone);
+    if (startsAt) {
+      const durationMinutes = durationMinutesBetween(party.starts_at, party.ends_at);
+      patch.starts_at = startsAt.toISOString();
+      patch.ends_at = partyEndsAt(startsAt, durationMinutes).toISOString();
+    }
   }
 
   const { error } = await supabase.from("parties").update(patch).eq("id", partyId);
@@ -414,4 +433,37 @@ export async function uploadInvitationPhoto(partyId: string, formData: FormData)
   const upload = await uploadPartyImage(supabase, partyId, file);
   if (upload.error || !upload.url) return { error: upload.error ?? "Could not upload photo." };
   return { error: null, url: upload.url };
+}
+
+
+export async function duplicateParty(partyId: string) {
+  const supabase = await createClient();
+  const { data: source, error: sourceError } = await supabase.from("parties").select("*").eq("id", partyId).maybeSingle();
+  if (sourceError || !source) return { error: sourceError?.message ?? "Party not found." };
+  const { id: _id, created_at: _created, updated_at: _updated, share_token: _share, ...copy } = source as any;
+  const { data: created, error } = await supabase.from("parties").insert({ ...copy, name: `${source.name} copy`, status: "planning", share_token: null }).select("id").single();
+  if (error || !created) return { error: error?.message ?? "Could not duplicate party." };
+  revalidatePath("/app/parties");
+  redirect(`/app/parties/${created.id}/settings`);
+}
+
+export async function archiveParty(partyId: string) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("parties").update({ status: "cancelled" }).eq("id", partyId);
+  if (error) return { error: error.message };
+  revalidatePath(`/app/parties/${partyId}`, "layout");
+  revalidatePath("/app/parties");
+  return { error: null };
+}
+
+
+export async function addCustomGroceryItem(partyId: string, name: string) {
+  const supabase = await createClient();
+  const trimmed = name.trim();
+  if (!trimmed) return { error: "Enter an item name." };
+  const { data: last } = await supabase.from("grocery_items").select("sort_order").eq("party_id", partyId).order("sort_order", { ascending: false }).limit(1).maybeSingle();
+  const { error } = await supabase.from("grocery_items").insert({ party_id: partyId, ingredient_name: trimmed, quantity: 1, category: "Other", sort_order: (last?.sort_order ?? -1) + 1 });
+  if (error) return { error: error.message };
+  revalidatePath(`/app/parties/${partyId}/shopping`);
+  return { error: null };
 }

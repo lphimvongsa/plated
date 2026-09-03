@@ -20,6 +20,7 @@ import type {
 import { canonicalKey } from "@/lib/recipes/units";
 import type { WeightSystem } from "@/lib/recipes/weight-convert";
 import { schedulePartyDerivedRefresh } from "@/lib/party/refresh-derived";
+import { requirePartyEditor } from "@/lib/party/access";
 import { createClient } from "@/lib/supabase/server";
 
 type RecipeInsert = Database["public"]["Tables"]["recipes"]["Insert"];
@@ -282,6 +283,10 @@ export async function ensureIngredientPriceAction(name: string, unit?: string | 
 
 export async function createManualRecipe(input: ManualRecipeInput) {
   const { supabase, user } = await requireUser();
+  if (input.partyId) {
+    const access = await requirePartyEditor(input.partyId);
+    if (access.error) return { error: access.error };
+  }
   const system = await getWeightSystem(supabase, user.id);
   const pantryNames = await loadUserPantryNames(supabase, user.id);
   const ingredients = await normalizeIngredientsForStorage(
@@ -387,7 +392,13 @@ export async function updateRecipe(recipeId: string, payload: RecipeUpdatePayloa
     .eq("id", recipeId)
     .single();
 
-  if (!existing || existing.owner_id !== user.id) {
+  if (!existing) {
+    return { error: "Recipe not found or access denied." };
+  }
+  if (existing.party_id) {
+    const access = await requirePartyEditor(existing.party_id);
+    if (access.error) return { error: access.error };
+  } else if (existing.owner_id !== user.id) {
     return { error: "Recipe not found or access denied." };
   }
 
@@ -482,7 +493,10 @@ export async function updateRecipe(recipeId: string, payload: RecipeUpdatePayloa
 }
 
 export async function copyCookbookRecipeToParty(cookbookRecipeId: string, partyId: string) {
-  const { supabase, user } = await requireUser();
+  const access = await requirePartyEditor(partyId);
+  if (access.error) return { error: access.error };
+  const { supabase, user } = access;
+  if (!user) return { error: "Not signed in." };
 
   const { data: source } = await supabase
     .from("recipes")
@@ -754,7 +768,13 @@ export async function deleteRecipe(recipeId: string, _partyId?: string | null) {
     .eq("id", recipeId)
     .single();
 
-  if (!recipe || recipe.owner_id !== user.id) {
+  if (!recipe) {
+    return { error: "Recipe not found or access denied." };
+  }
+  if (recipe.party_id) {
+    const access = await requirePartyEditor(recipe.party_id);
+    if (access.error) return { error: access.error };
+  } else if (recipe.owner_id !== user.id) {
     return { error: "Recipe not found or access denied." };
   }
 

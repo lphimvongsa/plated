@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { safeNextPath } from "@/lib/site";
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -38,13 +39,21 @@ export async function updateSession(request: NextRequest) {
   if (!userId && isProtected) {
     const url = request.nextUrl.clone();
     url.pathname = "/auth/login";
-    url.searchParams.set("next", path);
+    const requested = `${path}${request.nextUrl.search}`;
+    url.search = "";
+    url.searchParams.set("next", requested);
     return NextResponse.redirect(url);
   }
 
   const isOAuthHandshake = path === "/auth/callback" || path === "/auth/google";
   if (userId && isAuthRoute && !isOAuthHandshake) {
+    const next = safeNextPath(request.nextUrl.searchParams.get("next"));
     const url = request.nextUrl.clone();
+    url.search = "";
+    if (next.startsWith("/collaborate/")) {
+      url.pathname = next;
+      return NextResponse.redirect(url);
+    }
     url.pathname = "/app";
     return NextResponse.redirect(url);
   }

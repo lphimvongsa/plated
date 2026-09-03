@@ -1,6 +1,7 @@
 "use client";
 
 import { syncPartyTimeline } from "@/lib/actions/timeline";
+import { usePartyAccess } from "@/lib/party/access-client";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -10,6 +11,7 @@ export function TimelineSyncBanner({ partyId }: { partyId: string }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
+  const { canEdit } = usePartyAccess();
 
   if (dismissed) return null;
 
@@ -48,7 +50,7 @@ export function TimelineSyncBanner({ partyId }: { partyId: string }) {
           <button type="button" className="btn-secondary" onClick={() => setDismissed(true)} disabled={pending}>
             Not now
           </button>
-          <button type="button" className="btn-primary" onClick={handleSync} disabled={pending}>
+          <button type="button" className="btn-primary" onClick={handleSync} disabled={pending || !canEdit}>
             <RefreshCw size={15} /> {pending ? "Updating…" : "Update timeline"}
           </button>
         </div>

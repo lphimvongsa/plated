@@ -1,6 +1,7 @@
 import { PartyShell } from "@/components/party-shell";
 import { initialsFromName } from "@/lib/rsvp";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthenticatedUserId } from "@/lib/supabase/auth";
 import { notFound } from "next/navigation";
 
 export default async function PartyLayout({
@@ -12,6 +13,7 @@ export default async function PartyLayout({
 }) {
   const { partyId } = await params;
   const supabase = await createClient();
+  const userId = await getAuthenticatedUserId();
 
   const [{ data: party }, { data: members }] = await Promise.all([
     supabase
@@ -49,6 +51,7 @@ export default async function PartyLayout({
       }}
       collaborators={collaborators}
       previewToken={party.share_token}
+      role={members?.find((member) => member.user_id === userId)?.role ?? null}
     >
       {children}
     </PartyShell>

@@ -2,6 +2,7 @@
 
 import { ImportRecipeModal } from "@/components/recipe/import-recipe-modal";
 import { formatMinutes } from "@/lib/rsvp";
+import { usePartyAccess } from "@/lib/party/access-client";
 import {
   AlertTriangle,
   Clock3,
@@ -24,6 +25,7 @@ export type PartyRecipeCard = {
 };
 
 export function RecipesGrid({ recipes, partyId }: { recipes: PartyRecipeCard[]; partyId: string }) {
+  const { canEdit } = usePartyAccess();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [course, setCourse] = useState("All courses");
@@ -46,6 +48,7 @@ export function RecipesGrid({ recipes, partyId }: { recipes: PartyRecipeCard[]; 
         <div>
           <h2 className="font-editorial text-5xl font-semibold">Course Recipes</h2>
         </div>
+        {canEdit ? (
         <button
           type="button"
           className="btn-primary"
@@ -53,6 +56,7 @@ export function RecipesGrid({ recipes, partyId }: { recipes: PartyRecipeCard[]; 
         >
           <Plus size={16} /> Import recipe
         </button>
+        ) : null}
       </section>
       <div className="flex flex-col gap-3 rounded-[1.5rem] border border-ink/10 bg-white/35 p-3 sm:flex-row">
         <label className="relative flex-1">

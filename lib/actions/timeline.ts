@@ -1,15 +1,18 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requirePartyEditor } from "@/lib/party/access";
 import { createClient } from "@/lib/supabase/server";
 import { claimPartyRefresh, finishPartyRefresh } from "@/lib/party/refresh-claim";
 import type { Database } from "@/lib/database.types";
+import { inferDurationScalingMode, isDurationScalingMode, scaledTaskDurationMinutes, type DurationScalingMode } from "@/lib/timeline/duration-scaling";
 
 type RecipeTaskBlock = {
   recipeId: string;
   task: string;
   durationMinutes: number;
   sortOrder: number;
+  scalingText: string;
 };
 
 function recipeTaskKey(recipeId: string, task: string) {
@@ -20,6 +23,7 @@ function groupStepsIntoTasks(
   steps: {
     id: string;
     recipe_id: string;
+    title: string;
     task: string | null;
     duration_minutes: number | null;
     sort_order: number;
@@ -38,14 +42,31 @@ function groupStepsIntoTasks(
         task,
         durationMinutes: 0,
         sortOrder: step.sort_order,
+        scalingText: `${task} ${step.title}`,
       });
     }
     const block = map.get(key)!;
     block.durationMinutes += step.duration_minutes ?? 0;
     block.sortOrder = Math.min(block.sortOrder, step.sort_order);
+    block.scalingText += ` ${step.title}`;
   }
 
   return order.map((key) => map.get(key)!);
+}
+
+const HOUR_MS = 60 * 60 * 1000;
+const TIMELINE_LEAD_HOURS = 24;
+
+function timelineBounds(party: { starts_at: string; ends_at: string | null }) {
+  const dinnerStart = Date.parse(party.starts_at);
+  const parsedEnd = party.ends_at ? Date.parse(party.ends_at) : Number.NaN;
+  const dinnerEnd = Number.isFinite(parsedEnd) && parsedEnd >= dinnerStart ? parsedEnd : dinnerStart;
+  return {
+    dinnerStart,
+    dinnerEnd,
+    start: dinnerStart - TIMELINE_LEAD_HOURS * HOUR_MS,
+    end: dinnerEnd + HOUR_MS,
+  };
 }
 
 async function syncPartyTimelineUnlocked(
@@ -94,41 +115,53 @@ async function syncPartyTimelineUnlocked(
   const menuRecipeIds = new Set(recipeIds);
   const taskWrites: Array<Promise<{ error: { message: string } | null }>> = [];
   const taskInserts: Database["public"]["Tables"]["tasks"]["Insert"][] = [];
+  let timelineParty: { planning_guest_count: number; starts_at: string; ends_at: string | null } | null = null;
 
   if (recipeIds.length) {
-    const { data: steps } = await supabase
-      .from("recipe_steps")
-      .select("id, recipe_id, task, duration_minutes, sort_order")
-      .in("recipe_id", recipeIds)
-      .order("sort_order");
+    const [{ data: steps }, { data: recipes }, { data: party }] = await Promise.all([
+      supabase
+        .from("recipe_steps")
+        .select("id, recipe_id, title, task, duration_minutes, sort_order")
+        .in("recipe_id", recipeIds)
+        .order("sort_order"),
+      supabase.from("recipes").select("id, servings").in("id", recipeIds),
+      supabase.from("parties").select("planning_guest_count,starts_at,ends_at").eq("id", partyId).maybeSingle(),
+    ]);
 
+    timelineParty = party;
+    const servingsByRecipe = new Map((recipes ?? []).map((recipe) => [recipe.id, Math.max(1, recipe.servings ?? 1)]));
+    const planningGuests = Math.max(1, party?.planning_guest_count ?? 1);
     const blocks = groupStepsIntoTasks(steps ?? []);
 
     for (const block of blocks) {
       const key = recipeTaskKey(block.recipeId, block.task);
       const existing = tasksByName.get(key);
 
+      const baseDuration = Math.max(1, block.durationMinutes || 1);
+      const recipeServings = servingsByRecipe.get(block.recipeId) ?? planningGuests;
+      const scaleFactor = planningGuests / Math.max(1, recipeServings);
+
       if (existing) {
         keepIds.add(existing.id);
-        if (mode === "auto") {
-          if (existing.title !== block.task) {
-            taskWrites.push(
-              Promise.resolve(supabase.from("tasks").update({ title: block.task }).eq("id", existing.id))
-                .then((result) => ({ error: result.error })),
-            );
-          }
-        } else {
-          taskWrites.push(
-            Promise.resolve(supabase.from("tasks").update({
-              title: block.task,
-              task: block.task,
-              duration_minutes: block.durationMinutes || null,
-              recipe_id: block.recipeId,
-              step_id: null,
-              sort_order: block.sortOrder,
-            }).eq("id", existing.id)).then((result) => ({ error: result.error })),
-          );
-        }
+        const scalingMode: DurationScalingMode = isDurationScalingMode(existing.duration_scaling_mode)
+          ? existing.duration_scaling_mode
+          : inferDurationScalingMode(block.scalingText);
+        const scaledDuration = scalingMode === "manual"
+          ? Math.max(1, existing.duration_minutes ?? baseDuration)
+          : scaledTaskDurationMinutes(baseDuration, scaleFactor, scalingMode);
+
+        taskWrites.push(
+          Promise.resolve(supabase.from("tasks").update({
+            title: block.task,
+            task: block.task,
+            duration_minutes: scaledDuration,
+            base_duration_minutes: baseDuration,
+            duration_scaling_mode: scalingMode,
+            recipe_id: block.recipeId,
+            step_id: null,
+            sort_order: block.sortOrder,
+          }).eq("id", existing.id)).then((result) => ({ error: result.error })),
+        );
       } else if (mode === "structural") {
         // Promote any leftover row for this recipe so schedule/assignee can stick.
         const leftover = recipeTasks.find(
@@ -139,11 +172,19 @@ async function syncPartyTimelineUnlocked(
         ) ?? recipeTasks.find((row) => row.recipe_id === block.recipeId && !keepIds.has(row.id));
 
         if (leftover) {
+          const scalingMode: DurationScalingMode = isDurationScalingMode(leftover.duration_scaling_mode)
+            ? leftover.duration_scaling_mode
+            : inferDurationScalingMode(block.scalingText);
+          const scaledDuration = scalingMode === "manual"
+            ? Math.max(1, leftover.duration_minutes ?? baseDuration)
+            : scaledTaskDurationMinutes(baseDuration, scaleFactor, scalingMode);
           taskWrites.push(
             Promise.resolve(supabase.from("tasks").update({
               title: block.task,
               task: block.task,
-              duration_minutes: block.durationMinutes || null,
+              duration_minutes: scaledDuration,
+              base_duration_minutes: baseDuration,
+              duration_scaling_mode: scalingMode,
               recipe_id: block.recipeId,
               step_id: null,
               sort_order: block.sortOrder,
@@ -152,15 +193,18 @@ async function syncPartyTimelineUnlocked(
           keepIds.add(leftover.id);
           tasksByName.set(key, { ...leftover, task: block.task, step_id: null });
         } else {
+          const scalingMode = inferDurationScalingMode(block.scalingText);
           taskInserts.push({
-              party_id: partyId,
-              recipe_id: block.recipeId,
-              step_id: null,
-              title: block.task,
-              task: block.task,
-              duration_minutes: block.durationMinutes || null,
-              sort_order: block.sortOrder,
-              status: "todo",
+            party_id: partyId,
+            recipe_id: block.recipeId,
+            step_id: null,
+            title: block.task,
+            task: block.task,
+            duration_minutes: scaledTaskDurationMinutes(baseDuration, scaleFactor, scalingMode),
+            base_duration_minutes: baseDuration,
+            duration_scaling_mode: scalingMode,
+            sort_order: block.sortOrder,
+            status: "todo",
           });
         }
       }
@@ -198,6 +242,38 @@ async function syncPartyTimelineUnlocked(
     if (error) return { error: error.message };
   }
 
+  // Scaling a recipe can make a previously valid scheduled bar longer. Keep the
+  // no-overlap invariant by returning any newly conflicting/lane-overflow task to
+  // the pool while preserving its helper assignment.
+  if (timelineParty?.starts_at) {
+    const bounds = timelineBounds({ starts_at: timelineParty.starts_at, ends_at: timelineParty.ends_at });
+    const { data: scheduledRows } = await supabase
+      .from("tasks")
+      .select("id,helper_id,start_at,duration_minutes")
+      .eq("party_id", partyId)
+      .not("helper_id", "is", null)
+      .not("start_at", "is", null)
+      .order("start_at");
+
+    const lastEndByHelper = new Map<string, number>();
+    const unscheduleIds: string[] = [];
+    for (const row of scheduledRows ?? []) {
+      if (!row.helper_id || !row.start_at) continue;
+      const start = Date.parse(row.start_at);
+      const end = start + Math.max(1, row.duration_minutes ?? DEFAULT_TASK_MINUTES) * 60_000;
+      const previousEnd = lastEndByHelper.get(row.helper_id) ?? Number.NEGATIVE_INFINITY;
+      if (start < bounds.start || end > bounds.end || start < previousEnd) {
+        unscheduleIds.push(row.id);
+        continue;
+      }
+      lastEndByHelper.set(row.helper_id, end);
+    }
+    if (unscheduleIds.length) {
+      const { error } = await supabase.from("tasks").update({ start_at: null }).in("id", unscheduleIds);
+      if (error) return { error: error.message };
+    }
+  }
+
   revalidatePath(`/app/parties/${partyId}/timeline`);
   return { error: null };
 }
@@ -206,9 +282,11 @@ export async function syncPartyTimeline(
   partyId: string,
   options: { mode: "auto" | "structural" },
 ) {
+  const access = await requirePartyEditor(partyId);
+  if (access.error) return { error: access.error };
   if (options.mode === "auto") return syncPartyTimelineUnlocked(partyId, options);
 
-  const supabase = await createClient();
+  const supabase = access.supabase;
   const claim = await claimPartyRefresh(supabase, partyId, "timeline");
   if (!claim.token) return { error: claim.error };
 
@@ -234,7 +312,9 @@ export async function createDishScopedTask(
     task?: string | null;
   },
 ) {
-  const supabase = await createClient();
+  const access = await requirePartyEditor(partyId);
+  if (access.error) return { error: access.error };
+  const supabase = access.supabase;
 
   const { data: recipe } = await supabase
     .from("recipes")
@@ -324,7 +404,9 @@ export async function createUnscopedTask(
   partyId: string,
   input: { title: string; description?: string | null; duration_minutes?: number | null },
 ) {
-  const supabase = await createClient();
+  const access = await requirePartyEditor(partyId);
+  if (access.error) return { error: access.error };
+  const supabase = access.supabase;
 
   const { data: maxTask } = await supabase
     .from("tasks")
@@ -358,7 +440,9 @@ export async function moveTask(
   taskId: string,
   move: { helperId?: string | null; startAt?: string | null },
 ) {
-  const supabase = await createClient();
+  const access = await requirePartyEditor(partyId);
+  if (access.error) return { error: access.error };
+  const supabase = access.supabase;
   const patch: { helper_id?: string | null; assigned_name?: string | null; start_at?: string | null } = {};
 
   let effectiveHelperId: string | null | undefined =
@@ -410,6 +494,29 @@ export async function moveTask(
 
   if ("startAt" in move) patch.start_at = move.startAt ?? null;
 
+  if (patch.start_at && effectiveHelperId) {
+    const [{ data: movingTask }, { data: party }] = await Promise.all([
+      supabase.from("tasks").select("duration_minutes").eq("id", taskId).eq("party_id", partyId).maybeSingle(),
+      supabase.from("parties").select("starts_at,ends_at").eq("id", partyId).maybeSingle(),
+    ]);
+    const movingStart = Date.parse(patch.start_at);
+    const movingEnd = movingStart + Math.max(1, movingTask?.duration_minutes ?? 30) * 60_000;
+    if (party) {
+      const bounds = timelineBounds(party);
+      if (movingStart < bounds.start || movingEnd > bounds.end) {
+        return { error: "Place tasks between 24 hours before dinner and one hour after the dinner ends." };
+      }
+    }
+    const { data: occupied } = await supabase.from("tasks").select("id,start_at,duration_minutes").eq("party_id", partyId).eq("helper_id", effectiveHelperId).neq("id", taskId).not("start_at", "is", null);
+    const conflict = (occupied ?? []).some((other) => {
+      if (!other.start_at) return false;
+      const start = Date.parse(other.start_at);
+      const end = start + Math.max(1, other.duration_minutes ?? 30) * 60_000;
+      return movingStart < end && movingEnd > start;
+    });
+    if (conflict) return { error: "That helper already has a task during this time. Tasks cannot overlap." };
+  }
+
   const { error } = await supabase.from("tasks").update(patch).eq("id", taskId).eq("party_id", partyId);
   if (error) return { error: error.message };
 
@@ -418,11 +525,41 @@ export async function moveTask(
 }
 
 export async function setTaskDuration(partyId: string, taskId: string, durationMinutes: number) {
-  const supabase = await createClient();
-  const minutes = Math.max(5, Math.round(durationMinutes));
+  const access = await requirePartyEditor(partyId);
+  if (access.error) return { error: access.error };
+  const supabase = access.supabase;
+  const minutes = Math.max(1, Math.round(durationMinutes));
+
+  const { data: task } = await supabase
+    .from("tasks")
+    .select("start_at,helper_id")
+    .eq("id", taskId)
+    .eq("party_id", partyId)
+    .maybeSingle();
+
+  if (task?.start_at && task.helper_id) {
+    const start = Date.parse(task.start_at);
+    const end = start + minutes * 60_000;
+    const [{ data: occupied }, { data: party }] = await Promise.all([
+      supabase.from("tasks").select("id,start_at,duration_minutes").eq("party_id", partyId).eq("helper_id", task.helper_id).neq("id", taskId).not("start_at", "is", null),
+      supabase.from("parties").select("starts_at,ends_at").eq("id", partyId).maybeSingle(),
+    ]);
+    if (party) {
+      const bounds = timelineBounds(party);
+      if (start < bounds.start || end > bounds.end) return { error: "That duration would extend outside the available timeline." };
+    }
+    const conflict = (occupied ?? []).some((other) => {
+      if (!other.start_at) return false;
+      const otherStart = Date.parse(other.start_at);
+      const otherEnd = otherStart + Math.max(1, other.duration_minutes ?? 30) * 60_000;
+      return start < otherEnd && end > otherStart;
+    });
+    if (conflict) return { error: "That duration would overlap another task for this helper." };
+  }
+
   const { error } = await supabase
     .from("tasks")
-    .update({ duration_minutes: minutes })
+    .update({ duration_minutes: minutes, duration_scaling_mode: "manual" })
     .eq("id", taskId)
     .eq("party_id", partyId);
   if (error) return { error: error.message };
@@ -431,8 +568,78 @@ export async function setTaskDuration(partyId: string, taskId: string, durationM
   return { error: null };
 }
 
+export async function setTaskScalingMode(
+  partyId: string,
+  taskId: string,
+  requestedMode: DurationScalingMode,
+) {
+  const access = await requirePartyEditor(partyId);
+  if (access.error) return { error: access.error };
+  if (!isDurationScalingMode(requestedMode)) return { error: "Choose a valid scaling mode." };
+  const supabase = access.supabase;
+
+  const { data: task } = await supabase
+    .from("tasks")
+    .select("id,recipe_id,start_at,helper_id,duration_minutes,base_duration_minutes")
+    .eq("id", taskId)
+    .eq("party_id", partyId)
+    .maybeSingle();
+  if (!task) return { error: "Task not found." };
+
+  let nextDuration = Math.max(1, task.duration_minutes ?? task.base_duration_minutes ?? 1);
+  if (requestedMode !== "manual") {
+    const { data: party } = await supabase
+      .from("parties")
+      .select("planning_guest_count")
+      .eq("id", partyId)
+      .maybeSingle();
+    let scaleFactor = 1;
+    if (task.recipe_id) {
+      const { data: recipe } = await supabase
+        .from("recipes")
+        .select("servings")
+        .eq("id", task.recipe_id)
+        .maybeSingle();
+      scaleFactor = Math.max(1, party?.planning_guest_count ?? 1) / Math.max(1, recipe?.servings ?? 1);
+    }
+    nextDuration = scaledTaskDurationMinutes(task.base_duration_minutes ?? task.duration_minutes ?? 1, scaleFactor, requestedMode);
+  }
+
+  if (task.start_at && task.helper_id) {
+    const start = Date.parse(task.start_at);
+    const end = start + nextDuration * 60_000;
+    const [{ data: party }, { data: occupied }] = await Promise.all([
+      supabase.from("parties").select("starts_at,ends_at").eq("id", partyId).maybeSingle(),
+      supabase.from("tasks").select("id,start_at,duration_minutes").eq("party_id", partyId).eq("helper_id", task.helper_id).neq("id", taskId).not("start_at", "is", null),
+    ]);
+    if (party) {
+      const bounds = timelineBounds(party);
+      if (start < bounds.start || end > bounds.end) return { error: "That scaling choice would extend the task outside the available timeline." };
+    }
+    const conflict = (occupied ?? []).some((other) => {
+      if (!other.start_at) return false;
+      const otherStart = Date.parse(other.start_at);
+      const otherEnd = otherStart + Math.max(1, other.duration_minutes ?? 30) * 60_000;
+      return start < otherEnd && end > otherStart;
+    });
+    if (conflict) return { error: "That scaling choice would overlap another task for this helper." };
+  }
+
+  const { error } = await supabase
+    .from("tasks")
+    .update({ duration_scaling_mode: requestedMode, duration_minutes: nextDuration })
+    .eq("id", taskId)
+    .eq("party_id", partyId);
+  if (error) return { error: error.message };
+
+  revalidatePath(`/app/parties/${partyId}/timeline`);
+  return { error: null, mode: requestedMode, durationMinutes: nextDuration };
+}
+
 export async function addHelper(partyId: string, name: string, color = "#C84A35") {
-  const supabase = await createClient();
+  const access = await requirePartyEditor(partyId);
+  if (access.error) return { error: access.error };
+  const supabase = access.supabase;
   const trimmed = name.trim();
   if (!trimmed) return { error: "Give the helper a name." };
 
@@ -461,7 +668,9 @@ export async function addHelper(partyId: string, name: string, color = "#C84A35"
 }
 
 export async function renameHelper(partyId: string, helperId: string, name: string) {
-  const supabase = await createClient();
+  const access = await requirePartyEditor(partyId);
+  if (access.error) return { error: access.error };
+  const supabase = access.supabase;
   const trimmed = name.trim();
   if (!trimmed) return { error: "Give the helper a name." };
 
@@ -477,7 +686,9 @@ export async function renameHelper(partyId: string, helperId: string, name: stri
 }
 
 export async function removeHelper(partyId: string, helperId: string) {
-  const supabase = await createClient();
+  const access = await requirePartyEditor(partyId);
+  if (access.error) return { error: access.error };
+  const supabase = access.supabase;
 
   await supabase
     .from("tasks")
@@ -499,11 +710,13 @@ export async function removeHelper(partyId: string, helperId: string) {
 const DEFAULT_TASK_MINUTES = 30;
 
 export async function autoScheduleTimeline(partyId: string) {
-  const supabase = await createClient();
+  const access = await requirePartyEditor(partyId);
+  if (access.error) return { error: access.error };
+  const supabase = access.supabase;
 
   const { data: party } = await supabase
     .from("parties")
-    .select("starts_at, prep_starts_at")
+    .select("starts_at")
     .eq("id", partyId)
     .maybeSingle();
   if (!party) return { error: "Party not found." };
@@ -528,41 +741,42 @@ export async function autoScheduleTimeline(partyId: string) {
   const helperIds = (helpers ?? []).map((helper) => helper.id);
   if (!helperIds.length) return { error: "Add a helper before auto-placing tasks." };
 
-  const partyStart = new Date(party.starts_at).getTime();
-  const prepStart = new Date(party.prep_starts_at ?? party.starts_at).getTime();
+  const partyStart = Date.parse(party.starts_at);
+  const windowStart = partyStart - TIMELINE_LEAD_HOURS * HOUR_MS;
+  const cursorByHelper = new Map(helperIds.map((id) => [id, partyStart]));
+  const placements: Array<{ id: string; helperId: string; startAt: string }> = [];
 
-  // Pack backwards from the party so the last prep step lands right before service.
-  const starts = new Map<string, number>();
-  let cursor = partyStart;
+  // Work backwards from dinner independently inside each helper lane. Existing
+  // delegations are respected; unassigned tasks go to the lane with the most
+  // remaining room. This guarantees that auto-place cannot create overlaps.
   for (const task of [...pending].reverse()) {
-    const minutes = task.duration_minutes ?? DEFAULT_TASK_MINUTES;
-    cursor -= minutes * 60_000;
-    starts.set(task.id, cursor);
+    const minutes = Math.max(1, task.duration_minutes ?? DEFAULT_TASK_MINUTES);
+    const helperId = task.helper_id && helperIds.includes(task.helper_id)
+      ? task.helper_id
+      : [...helperIds].sort((a, b) => (cursorByHelper.get(b) ?? partyStart) - (cursorByHelper.get(a) ?? partyStart))[0];
+    const end = cursorByHelper.get(helperId) ?? partyStart;
+    const start = end - minutes * 60_000;
+    if (start < windowStart) {
+      return { error: "There is not enough room to auto-place every task in the 24 hours before dinner. Add another helper or shorten task durations." };
+    }
+    placements.push({ id: task.id, helperId, startAt: new Date(start).toISOString() });
+    cursorByHelper.set(helperId, start);
   }
 
-  const shift = cursor < prepStart ? prepStart - cursor : 0;
-
-  const updates = await Promise.all(
-    pending.map((task, index) => {
-      const startAt = new Date((starts.get(task.id) ?? prepStart) + shift).toISOString();
-      const helperId = task.helper_id && helperIds.includes(task.helper_id)
-        ? task.helper_id
-        : helperIds[index % helperIds.length];
-      return supabase
-        .from("tasks")
-        .update({ start_at: startAt, helper_id: helperId })
-        .eq("id", task.id);
-    }),
-  );
+  const updates = await Promise.all(placements.map((placement) =>
+    supabase.from("tasks").update({ start_at: placement.startAt, helper_id: placement.helperId }).eq("id", placement.id),
+  ));
   const updateError = updates.find((result) => result.error)?.error;
   if (updateError) return { error: updateError.message };
 
   revalidatePath(`/app/parties/${partyId}/timeline`);
-  return { error: null, scheduled: pending.length };
+  return { error: null, scheduled: placements.length };
 }
 
 export async function setHelperColor(partyId: string, helperId: string, color: string) {
-  const supabase = await createClient();
+  const access = await requirePartyEditor(partyId);
+  if (access.error) return { error: access.error };
+  const supabase = access.supabase;
   const value = /^#[0-9a-f]{6}$/i.test(color) ? color : "#C84A35";
   const { error } = await supabase.from("party_helpers").update({ color: value }).eq("id", helperId).eq("party_id", partyId);
   if (error) return { error: error.message };
@@ -571,11 +785,23 @@ export async function setHelperColor(partyId: string, helperId: string, color: s
 }
 
 export async function setRecipeTimelineColor(partyId: string, recipeId: string, color: string) {
-  const supabase = await createClient();
+  const access = await requirePartyEditor(partyId);
+  if (access.error) return { error: access.error };
+  const supabase = access.supabase;
   const value = /^#[0-9a-f]{6}$/i.test(color) ? color : "#C84A35";
   const { error } = await supabase.from("recipes").update({ color_hex: value }).eq("id", recipeId).eq("party_id", partyId);
   if (error) return { error: error.message };
   revalidatePath(`/app/parties/${partyId}/timeline`);
   revalidatePath(`/app/parties/${partyId}/recipes`);
+  return { error: null };
+}
+
+
+export async function resetTimeline(partyId: string) {
+  const access = await requirePartyEditor(partyId);
+  if (access.error) return { error: access.error };
+  const { error } = await access.supabase.from("tasks").update({ start_at: null }).eq("party_id", partyId);
+  if (error) return { error: error.message };
+  revalidatePath(`/app/parties/${partyId}/timeline`);
   return { error: null };
 }

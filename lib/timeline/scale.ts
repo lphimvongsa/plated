@@ -28,7 +28,8 @@ export function gridTickMinutes(viewHours: number): number {
   if (viewHours <= 1.25) return 5;
   if (viewHours <= 3.5) return 10;
   if (viewHours <= 6) return 15;
-  return 30;
+  if (viewHours <= 16) return 30;
+  return 60;
 }
 
 /** Label cadence adapts independently from the smaller hash marks. */

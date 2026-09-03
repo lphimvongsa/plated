@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { withStorageUploadRetry } from "@/lib/media/storage-upload";
-import { createClient } from "@/lib/supabase/server";
+import { requirePartyEditor } from "@/lib/party/access";
 
 type GroceryChoice = {
   id: string;
@@ -82,17 +82,16 @@ function bestGroceryMatch(name: string, grocery: GroceryChoice[]) {
   return { best, score };
 }
 
-async function requirePartyMember(partyId: string) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { ok: false as const, error: "Sign in to scan receipts." };
-  const { data: party } = await supabase.from("parties").select("id").eq("id", partyId).maybeSingle();
-  if (!party) return { ok: false as const, error: "Party not found or you do not have access." };
-  return { ok: true as const, supabase, user };
+async function requirePartyEditorAccess(partyId: string) {
+  const access = await requirePartyEditor(partyId);
+  if (access.error || !access.user) {
+    return { ok: false as const, error: access.error ?? "Sign in to scan receipts." };
+  }
+  return { ok: true as const, supabase: access.supabase, user: access.user };
 }
 
 export async function analyzeReceipt(partyId: string, formData: FormData): Promise<ReceiptAnalysis> {
-  const auth = await requirePartyMember(partyId);
+  const auth = await requirePartyEditorAccess(partyId);
   if (!auth.ok) return auth;
   const file = formData.get("receipt");
   if (!(file instanceof Blob) || file.size === 0) return { ok: false, error: "Choose or take a receipt photo first." };
@@ -213,7 +212,7 @@ export async function saveReceiptMatches(partyId: string, input: {
   imagePath: string | null;
   items: ReceiptMatchDraft[];
 }) {
-  const auth = await requirePartyMember(partyId);
+  const auth = await requirePartyEditorAccess(partyId);
   if (!auth.ok) return { error: auth.error };
   const { supabase, user } = auth;
 

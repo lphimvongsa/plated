@@ -45,3 +45,26 @@ export function cropArrayFromJson(value: unknown, count: number): CropRect[] {
   }
   return Array.from({ length: count }, (_, index) => normalizeCrop(source[index]));
 }
+
+export function photoCaptionArrayFromJson(value: unknown, count: number): string[] {
+  let source: unknown[] = [];
+  if (Array.isArray(value)) source = value;
+  else if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) source = parsed;
+    } catch {
+      source = [];
+    }
+  }
+  return Array.from({ length: count }, (_, index) => {
+    const item = source[index];
+    if (!item || typeof item !== "object") return "";
+    const caption = (item as { caption?: unknown }).caption;
+    return typeof caption === "string" ? caption : "";
+  });
+}
+
+export function cropArrayWithCaptions(crops: CropRect[], captions: string[]) {
+  return crops.map((crop, index) => ({ ...normalizeCrop(crop), caption: String(captions[index] ?? "").slice(0, 120) }));
+}

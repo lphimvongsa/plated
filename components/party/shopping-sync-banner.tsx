@@ -1,6 +1,7 @@
 "use client";
 
 import { regenerateShoppingList } from "@/lib/actions/shopping";
+import { usePartyAccess } from "@/lib/party/access-client";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -9,6 +10,7 @@ export function ShoppingSyncBanner({ partyId }: { partyId: string }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const { canEdit } = usePartyAccess();
 
   function handleRefresh() {
     setError(null);
@@ -39,7 +41,7 @@ export function ShoppingSyncBanner({ partyId }: { partyId: string }) {
           </p>
           {error ? <p className="mt-3 text-sm font-semibold text-tomato">{error}</p> : null}
         </div>
-        <button type="button" className="btn-primary shrink-0" onClick={handleRefresh} disabled={pending}>
+        <button type="button" className="btn-primary shrink-0" onClick={handleRefresh} disabled={pending || !canEdit}>
           <RefreshCw size={15} className={pending ? "animate-spin" : ""} />
           {pending ? "Updating…" : "Update now"}
         </button>

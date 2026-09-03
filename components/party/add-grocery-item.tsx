@@ -1,0 +1,5 @@
+"use client";
+import { addCustomGroceryItem } from "@/lib/actions/parties";
+import { Plus } from "lucide-react";
+import { useState, useTransition } from "react";
+export function AddGroceryItem({partyId}:{partyId:string}){const [open,setOpen]=useState(false),[name,setName]=useState(""),[error,setError]=useState<string|null>(null);const[pending,start]=useTransition();if(!open)return <button className="btn-secondary" onClick={()=>setOpen(true)}><Plus size={16}/> Add item</button>;return <div className="flex gap-2"><input autoFocus className="field !min-h-10 !py-2" value={name} onChange={e=>setName(e.target.value)} placeholder="Grocery item"/><button className="btn-primary !min-h-10" disabled={pending} onClick={()=>start(async()=>{const r=await addCustomGroceryItem(partyId,name);if(r?.error)setError(r.error);else{setName("");setOpen(false);location.reload();}})}>Add</button><button className="btn-secondary !min-h-10" onClick={()=>setOpen(false)}>×</button>{error?<span className="text-xs text-tomato">{error}</span>:null}</div>}

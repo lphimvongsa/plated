@@ -1,3 +1,5 @@
+import { DEFAULT_TIMEZONE } from "@/lib/timezone";
+
 export type CalendarEvent = {
   title: string;
   startsAt: string;
@@ -88,7 +90,7 @@ export function icsDataUri(event: CalendarEvent) {
   return `data:text/calendar;charset=utf-8,${encodeURIComponent(icsContent(event))}`;
 }
 
-export function formatPartyWhen(startsAt: string, timeZone = "America/New_York") {
+export function formatPartyWhen(startsAt: string, timeZone = DEFAULT_TIMEZONE) {
   const start = new Date(startsAt);
   const date = new Intl.DateTimeFormat("en-US", {
     weekday: "long",

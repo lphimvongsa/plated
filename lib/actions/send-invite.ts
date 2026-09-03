@@ -6,6 +6,7 @@ import { buildInviteEmail, buildInviteSms, type InvitePartyDetails } from "@/lib
 import { DEFAULT_PARTY_DURATION_MINUTES, partyEndsAt } from "@/lib/party/duration";
 import { normalizePhone } from "@/lib/outbound/phone";
 import { sendSms } from "@/lib/outbound/sms";
+import { requirePartyEditor } from "@/lib/party/access";
 import { createClient } from "@/lib/supabase/server";
 
 export type InviteChannel = "email" | "sms";
@@ -133,6 +134,8 @@ export async function sendGuestInvite(input: {
   channel: InviteChannel;
   recipient: string;
 }): Promise<{ error: string | null }> {
+  const access = await requirePartyEditor(input.partyId);
+  if (access.error) return { error: access.error };
   const loaded = await loadSendableInvite(input.partyId, input.guestId);
   if (loaded.error || !loaded.party || !loaded.guest || !loaded.invite) {
     return { error: loaded.error ?? "Could not send this invite." };
@@ -159,7 +162,6 @@ export async function sendGuestInvite(input: {
       text: email.text,
       fromName: host.name ? `${host.name} via plated.` : "plated.",
       replyTo: host.email,
-      ics: email.ics,
     });
     await recordDelivery(supabase, {
       partyId: input.partyId,
@@ -234,8 +236,9 @@ export async function sendGuestInvites(input: {
 }
 
 export async function markInviteLinkCopied(inviteId: string, partyId: string) {
-  const supabase = await createClient();
-  await supabase
+  const access = await requirePartyEditor(partyId);
+  if (access.error) return { error: access.error };
+  await access.supabase
     .from("invites")
     .update({ last_sent_at: new Date().toISOString(), last_sent_channel: "link" })
     .eq("id", inviteId)

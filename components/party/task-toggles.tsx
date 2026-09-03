@@ -1,6 +1,7 @@
 "use client";
 
 import { toggleTaskDone, toggleTaskLocked } from "@/lib/actions/parties";
+import { usePartyAccess } from "@/lib/party/access-client";
 import { Check, Lock, Play, Unlock } from "lucide-react";
 import { useTransition } from "react";
 
@@ -18,11 +19,12 @@ export function TaskDoneToggle({
   placement?: "rail" | "inline";
 }) {
   const [pending, startTransition] = useTransition();
+  const { canEdit } = usePartyAccess();
 
   return (
     <button
       type="button"
-      disabled={pending}
+      disabled={pending || !canEdit}
       onClick={(event) => {
         event.stopPropagation();
         startTransition(async () => {
@@ -55,11 +57,12 @@ export function TaskLockToggle({
   locked: boolean;
 }) {
   const [pending, startTransition] = useTransition();
+  const { canEdit } = usePartyAccess();
 
   return (
     <button
       type="button"
-      disabled={pending}
+      disabled={pending || !canEdit}
       onClick={(event) => {
         event.stopPropagation();
         startTransition(async () => {

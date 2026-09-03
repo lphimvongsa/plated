@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { safeNextPath } from "@/lib/site";
 import { createClient } from "@/lib/supabase/server";
 
 export async function completeOnboarding(input: {
@@ -8,6 +9,7 @@ export async function completeOnboarding(input: {
   skill: string;
   timezone: string;
   pantry: string[];
+  next?: string;
 }) {
   const supabase = await createClient();
   const {
@@ -43,5 +45,5 @@ export async function completeOnboarding(input: {
     }
   }
 
-  redirect("/app");
+  redirect(safeNextPath(input.next));
 }

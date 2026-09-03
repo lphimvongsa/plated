@@ -1,211 +1,32 @@
 "use client";
 
-import {
-  DEFAULT_COOKBOOK_VIEW,
-  getCookbookViewMode,
-  setCookbookViewMode,
-  type CookbookViewMode,
-} from "@/lib/recipes/cookbook-view-preference";
 import { signOut } from "@/lib/actions/auth";
+import { createClient } from "@/lib/supabase/client";
 import { Bell, BookOpen, ChefHat, LayoutGrid, LogOut, Ruler, Save, Shield, UserRound } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState, Suspense } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { DEFAULT_COOKBOOK_VIEW, getCookbookViewMode, setCookbookViewMode, type CookbookViewMode } from "@/lib/recipes/cookbook-view-preference";
 
-const navItems = [
-  [UserRound, "Profile"],
-  [BookOpen, "Cookbook"],
-  [Ruler, "Measurements"],
-  [ChefHat, "Kitchen & pantry"],
-  [Bell, "Notifications"],
-  [Shield, "Privacy"],
-] as const;
+const navItems=[[UserRound,"Profile"],[BookOpen,"Cookbook"],[Ruler,"Measurements"],[ChefHat,"Kitchen & pantry"],[Bell,"Notifications"],[Shield,"Privacy"]] as const;
+type Section=(typeof navItems)[number][1];
+const defaults={measurement:"US",pantry:"olive oil, kosher salt, black pepper",master:true,rsvp:true,collabInvite:true,collabAccept:true,analytics:false,profileDiscoverable:true};
+function loadPrefs(){try{return {...defaults,...JSON.parse(localStorage.getItem("plated.settings")||"{}")}}catch{return defaults}}
+function savePrefs(p:any){localStorage.setItem("plated.settings",JSON.stringify(p));}
 
-type Section = (typeof navItems)[number][1];
-
-function isSection(value: string | null): value is Section {
-  return navItems.some(([, label]) => label === value);
+function Inner(){
+ const search=useSearchParams(); const initial=search.get("section"); const [section,setSection]=useState<Section>((navItems.some(([,l])=>l===initial)?initial:"Profile") as Section); const [saved,setSaved]=useState(false); const [cookbook,setCookbook]=useState<CookbookViewMode>(DEFAULT_COOKBOOK_VIEW); const [prefs,setPrefs]=useState(defaults); const [profile,setProfile]=useState({name:"",email:"",skill:"Intermediate",units:"US",avatar:""}); const fileRef=useRef<HTMLInputElement>(null);
+ useEffect(()=>{setPrefs(loadPrefs());setCookbook(getCookbookViewMode()); const supabase=createClient(); supabase.auth.getUser().then(async({data})=>{if(!data.user)return; const {data:p}=await supabase.from("profiles").select("name,email,cooking_skill_level,preferred_measurement,avatar_url").eq("id",data.user.id).maybeSingle(); setProfile({name:p?.name||data.user.user_metadata?.name||"",email:p?.email||data.user.email||"",skill:p?.cooking_skill_level||"Intermediate",units:p?.preferred_measurement||"US",avatar:p?.avatar_url||""});});},[]);
+ function patchPrefs(next:any){const v={...prefs,...next};setPrefs(v);savePrefs(v);setSaved(true)}
+ async function saveProfile(){const supabase=createClient(); const {data:{user}}=await supabase.auth.getUser(); if(!user)return; await supabase.from("profiles").update({name:profile.name,cooking_skill_level:profile.skill,preferred_measurement:profile.units,avatar_url:profile.avatar||null}).eq("id",user.id); if(profile.email&&profile.email!==user.email) await supabase.auth.updateUser({email:profile.email}); setSaved(true)}
+ async function enableNotifications(){if(!("Notification" in window)){alert("Notifications are not supported in this browser.");return;} const permission=await Notification.requestPermission(); if(permission!=="granted")return; patchPrefs({master:true}); const reg=await navigator.serviceWorker.ready; const key=process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY; if(key&&reg.pushManager){const bytes=Uint8Array.from(atob(key.replace(/-/g,"+").replace(/_/g,"/")),c=>c.charCodeAt(0)); const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:bytes}); await fetch("/api/notifications/subscribe",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(sub)}).catch(()=>null);} await reg.showNotification("plated. notifications are on",{body:"RSVP and collaborator updates can appear here."});}
+ return <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4 md:p-8 xl:p-12"><div className="mx-auto w-full max-w-5xl"><p className="eyebrow">Account settings</p><h1 className="mt-2 font-editorial text-5xl font-semibold md:text-6xl">Your kitchen defaults.</h1>{saved?<div className="mt-6 border border-olive/25 bg-olive/8 p-4 text-sm font-semibold text-olive">Settings saved.</div>:null}<div className="mt-10 grid gap-6 lg:grid-cols-[220px_1fr]"><nav className="space-y-2">{navItems.map(([Icon,label])=><button key={label} onClick={()=>setSection(label)} className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold ${section===label?"bg-ink text-paper":"text-ink/55 hover:bg-white/40"}`}><Icon size={17}/>{label}</button>)}</nav><div className="space-y-6">
+ {section==="Profile"?<article className="card p-6"><p className="eyebrow">Profile</p><div className="mt-5 flex items-center gap-5"><div className="grid h-20 w-20 place-items-center overflow-hidden rounded-full bg-tomato font-editorial text-2xl text-paper">{profile.avatar?<img src={profile.avatar} className="h-full w-full object-cover" alt=""/>:(profile.name||"P").split(" ").map(x=>x[0]).join("").slice(0,2)}</div><div><button className="btn-secondary" onClick={()=>fileRef.current?.click()}>Change photo</button><input ref={fileRef} type="file" accept="image/*" className="sr-only" onChange={e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=()=>setProfile(x=>({...x,avatar:String(r.result)}));r.readAsDataURL(f)}}/></div></div><div className="mt-6 grid gap-4 sm:grid-cols-2"><label><span className="mb-2 block text-xs font-semibold">Name</span><input className="field" value={profile.name} onChange={e=>setProfile(x=>({...x,name:e.target.value}))}/></label><label><span className="mb-2 block text-xs font-semibold">Email</span><input className="field" type="email" value={profile.email} onChange={e=>setProfile(x=>({...x,email:e.target.value}))}/></label><label><span className="mb-2 block text-xs font-semibold">Skill level</span><select className="field" value={profile.skill} onChange={e=>setProfile(x=>({...x,skill:e.target.value}))}><option>Beginner</option><option>Intermediate</option><option>Advanced</option></select></label><label><span className="mb-2 block text-xs font-semibold">Default units</span><select className="field" value={profile.units} onChange={e=>setProfile(x=>({...x,units:e.target.value}))}><option value="US">US customary</option><option value="Metric">Metric</option></select></label></div><button className="btn-primary mt-6" onClick={saveProfile}><Save size={16}/> Save settings</button></article>:null}
+ {section==="Cookbook"?<article className="card p-6"><p className="eyebrow">Cookbook</p><h2 className="mt-2 font-editorial text-3xl font-semibold">How recipes appear</h2><div className="mt-6 grid gap-3 sm:grid-cols-2">{[["book",BookOpen,"Flipbook"],["grid",LayoutGrid,"Card grid"]].map(([mode,Icon,label]:any)=><button key={mode} onClick={()=>{setCookbook(mode);setCookbookViewMode(mode);setSaved(true)}} className={`border p-5 text-left ${cookbook===mode?"border-tomato bg-tomato/5":"border-ink/15"}`}><Icon size={18}/><p className="mt-3 font-editorial text-2xl font-semibold">{label}</p></button>)}</div></article>:null}
+ {section==="Measurements"?<article className="card p-6"><p className="eyebrow">Measurements</p><h2 className="mt-2 font-editorial text-3xl font-semibold">Recipe units</h2><div className="mt-5 flex gap-2">{["US","Metric"].map(v=><button key={v} className={prefs.measurement===v?"btn-primary":"btn-secondary"} onClick={()=>patchPrefs({measurement:v})}>{v==="US"?"US customary":"Metric"}</button>)}</div></article>:null}
+ {section==="Kitchen & pantry"?<article className="card p-6"><p className="eyebrow">Kitchen & pantry</p><h2 className="mt-2 font-editorial text-3xl font-semibold">Staples you usually have</h2><p className="mt-2 text-sm text-ink/50">Comma-separated staples can be used as defaults when reviewing shopping lists.</p><textarea className="field mt-5 min-h-36" value={prefs.pantry} onChange={e=>setPrefs({...prefs,pantry:e.target.value})}/><button className="btn-primary mt-4" onClick={()=>patchPrefs({pantry:prefs.pantry})}><Save size={15}/> Save pantry</button></article>:null}
+ {section==="Notifications"?<article className="card p-6"><p className="eyebrow">Notifications</p><h2 className="mt-2 font-editorial text-3xl font-semibold">Dinner updates</h2><p className="mt-2 text-sm text-ink/50">On iPhone/iPad, install plated. to the Home Screen before enabling native web notifications.</p><button className="btn-primary mt-5" onClick={enableNotifications}><Bell size={15}/> Enable native notifications</button><div className="mt-6 space-y-4">{[["master","All notifications"],["rsvp","RSVP received"],["collabInvite","Collaborator invitation"],["collabAccept","Collaborator accepted"]].map(([k,l])=><label key={k} className="flex items-center justify-between border-t border-ink/10 pt-4"><span className="text-sm font-semibold">{l}</span><input type="checkbox" checked={(prefs as any)[k]} onChange={e=>patchPrefs({[k]:e.target.checked})}/></label>)}</div></article>:null}
+ {section==="Privacy"?<article className="card p-6"><p className="eyebrow">Privacy</p><h2 className="mt-2 font-editorial text-3xl font-semibold">Data & visibility</h2><div className="mt-5 space-y-4"><label className="flex items-center justify-between"><span><b className="block text-sm">Profile discoverability</b><span className="text-xs text-ink/45">Allow collaborators to find your plated. profile.</span></span><input type="checkbox" checked={prefs.profileDiscoverable} onChange={e=>patchPrefs({profileDiscoverable:e.target.checked})}/></label><label className="flex items-center justify-between border-t border-ink/10 pt-4"><span><b className="block text-sm">Anonymous product analytics</b><span className="text-xs text-ink/45">Share anonymous usage events to improve the prototype.</span></span><input type="checkbox" checked={prefs.analytics} onChange={e=>patchPrefs({analytics:e.target.checked})}/></label></div></article>:null}
+ <article className="border border-tomato/20 bg-tomato/5 p-6"><h2 className="font-editorial text-2xl font-semibold text-tomato">Account actions</h2><form action={signOut}><button className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-tomato"><LogOut size={15}/> Sign out</button></form></article>
+ </div></div></div></div>;
 }
-
-function AccountSettingsInner() {
-  const searchParams = useSearchParams();
-  const initialSection = searchParams.get("section");
-  const [saved, setSaved] = useState(false);
-  const [section, setSection] = useState<Section>(isSection(initialSection) ? initialSection : "Profile");
-  const [cookbookView, setCookbookView] = useState<CookbookViewMode>(DEFAULT_COOKBOOK_VIEW);
-
-  useEffect(() => {
-    setCookbookView(getCookbookViewMode());
-  }, []);
-
-  useEffect(() => {
-    const next = searchParams.get("section");
-    if (isSection(next)) setSection(next);
-  }, [searchParams]);
-
-  function saveCookbookView(mode: CookbookViewMode) {
-    setCookbookView(mode);
-    setCookbookViewMode(mode);
-    setSaved(true);
-  }
-
-  return (
-    <div className="p-4 md:p-8 xl:p-12">
-      <div className="mx-auto max-w-5xl">
-        <p className="eyebrow">Account settings</p>
-        <h1 className="mt-2 font-editorial text-5xl font-semibold md:text-6xl">Your kitchen defaults.</h1>
-        <p className="mt-4 text-sm text-ink/55">
-          Update your profile, cookbook layout, measurement system, pantry staples, and notifications.
-        </p>
-
-        {saved ? (
-          <div className="mt-6 rounded-2xl border border-olive/25 bg-olive/8 p-4 text-sm font-semibold text-olive">
-            Settings saved.
-          </div>
-        ) : null}
-
-        <div className="mt-10 grid gap-6 lg:grid-cols-[220px_1fr]">
-          <nav className="space-y-2">
-            {navItems.map(([Icon, label]) => (
-              <button
-                key={label}
-                type="button"
-                onClick={() => setSection(label)}
-                className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold ${
-                  section === label ? "bg-ink text-paper" : "text-ink/55 hover:bg-white/40"
-                }`}
-              >
-                <Icon size={17} />
-                {label}
-              </button>
-            ))}
-          </nav>
-
-          <div className="space-y-6">
-            {section === "Profile" ? (
-              <article className="card p-6">
-                <p className="eyebrow">Profile</p>
-                <div className="mt-5 flex flex-col gap-5 sm:flex-row sm:items-center">
-                  <div className="grid h-20 w-20 place-items-center rounded-full bg-tomato font-editorial text-2xl font-semibold text-paper">
-                    LP
-                  </div>
-                  <div>
-                    <button type="button" className="btn-secondary">
-                      Change photo
-                    </button>
-                    <p className="mt-2 text-xs text-ink/40">JPG, PNG, or WEBP.</p>
-                  </div>
-                </div>
-                <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                  <label>
-                    <span className="mb-2 block text-xs font-semibold">Name</span>
-                    <input className="field" defaultValue="Lukas Phimvongsa" />
-                  </label>
-                  <label>
-                    <span className="mb-2 block text-xs font-semibold">Email</span>
-                    <input className="field" defaultValue="lukas@example.com" />
-                  </label>
-                  <label>
-                    <span className="mb-2 block text-xs font-semibold">Skill level</span>
-                    <select className="field" defaultValue="Intermediate">
-                      <option>Beginner</option>
-                      <option>Intermediate</option>
-                      <option>Advanced</option>
-                    </select>
-                  </label>
-                  <label>
-                    <span className="mb-2 block text-xs font-semibold">Default units</span>
-                    <select className="field" defaultValue="US customary">
-                      <option>US customary</option>
-                      <option>Metric</option>
-                    </select>
-                  </label>
-                </div>
-                <button type="button" className="btn-primary mt-6" onClick={() => setSaved(true)}>
-                  <Save size={16} /> Save settings
-                </button>
-              </article>
-            ) : null}
-
-            {section === "Cookbook" ? (
-              <article className="card p-6">
-                <p className="eyebrow">Cookbook</p>
-                <h2 className="mt-2 font-editorial text-3xl font-semibold">How recipes appear</h2>
-                <p className="mt-3 max-w-xl text-sm text-ink/55">
-                  The flipbook is the default. Switch to the card grid anytime — your choice is saved on this
-                  device.
-                </p>
-
-                <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => saveCookbookView("book")}
-                    className={`rounded-[3px] border p-5 text-left transition ${
-                      cookbookView === "book"
-                        ? "border-tomato bg-tomato/5 shadow-[inset_0_0_0_1px_rgba(200,68,50,0.35)]"
-                        : "border-ink/15 hover:border-tomato/40"
-                    }`}
-                  >
-                    <BookOpen size={18} className={cookbookView === "book" ? "text-tomato" : "text-ink/45"} />
-                    <p className="mt-3 font-editorial text-2xl font-semibold">Flipbook</p>
-                    <p className="mt-2 text-sm text-ink/50">
-                      Open-book spreads with page-turn animation. Default.
-                    </p>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => saveCookbookView("grid")}
-                    className={`rounded-[3px] border p-5 text-left transition ${
-                      cookbookView === "grid"
-                        ? "border-tomato bg-tomato/5 shadow-[inset_0_0_0_1px_rgba(200,68,50,0.35)]"
-                        : "border-ink/15 hover:border-tomato/40"
-                    }`}
-                  >
-                    <LayoutGrid size={18} className={cookbookView === "grid" ? "text-tomato" : "text-ink/45"} />
-                    <p className="mt-3 font-editorial text-2xl font-semibold">Card grid</p>
-                    <p className="mt-2 text-sm text-ink/50">
-                      Searchable recipe cards — the classic cookbook browse layout.
-                    </p>
-                  </button>
-                </div>
-              </article>
-            ) : null}
-
-            {section !== "Profile" && section !== "Cookbook" ? (
-              <article className="card p-6">
-                <p className="eyebrow">{section}</p>
-                <h2 className="mt-2 font-editorial text-3xl font-semibold">Coming soon</h2>
-                <p className="mt-3 text-sm text-ink/55">
-                  These preferences will plug into your account once the settings backend is wired up.
-                </p>
-              </article>
-            ) : null}
-
-            <article className="rounded-[1.75rem] border border-tomato/20 bg-tomato/5 p-6">
-              <h2 className="font-editorial text-2xl font-semibold text-tomato">Account actions</h2>
-              <form action={signOut}>
-                <button type="submit" className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-tomato">
-                  <LogOut size={15} /> Sign out
-                </button>
-              </form>
-            </article>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export default function AccountSettingsPage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="p-4 md:p-8 xl:p-12">
-          <p className="text-sm text-ink/45">Loading settings…</p>
-        </div>
-      }
-    >
-      <AccountSettingsInner />
-    </Suspense>
-  );
-}
+export default function Page(){return <Suspense fallback={<div className="p-8">Loading settings…</div>}><Inner/></Suspense>}

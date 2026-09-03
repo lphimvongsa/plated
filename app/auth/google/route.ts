@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { safeNextPath } from "@/lib/site";
 import { createClient } from "@/lib/supabase/server";
 
 function loginErrorRedirect(origin: string, message: string) {
@@ -8,13 +9,14 @@ function loginErrorRedirect(origin: string, message: string) {
 }
 
 export async function GET(request: Request) {
-  const { origin } = new URL(request.url);
+  const { origin, searchParams } = new URL(request.url);
+  const next = safeNextPath(searchParams.get("next"));
   const supabase = await createClient();
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
-      redirectTo: `${origin}/auth/callback`,
+      redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next)}`,
       skipBrowserRedirect: true,
     },
   });

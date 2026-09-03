@@ -1,12 +1,6 @@
 import { NextResponse } from "next/server";
+import { safeNextPath } from "@/lib/site";
 import { createClient } from "@/lib/supabase/server";
-
-function safeNextPath(value: string | null) {
-  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) {
-    return "/app";
-  }
-  return value;
-}
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
@@ -29,7 +23,11 @@ export async function GET(request: Request) {
           .eq("id", user.id)
           .maybeSingle();
 
-        const destination = profile?.onboarding_complete ? next : "/onboarding";
+        const destination = profile?.onboarding_complete
+          ? next
+          : next !== "/app"
+            ? `/onboarding?next=${encodeURIComponent(next)}`
+            : "/onboarding";
         return NextResponse.redirect(`${origin}${destination}`);
       }
     }

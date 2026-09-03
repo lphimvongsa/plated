@@ -2,6 +2,7 @@
 
 import { Modal } from "@/components/modal";
 import { markInviteLinkCopied, sendGuestInvite, sendGuestInvites, type InviteChannel } from "@/lib/actions/send-invite";
+import { usePartyAccess } from "@/lib/party/access-client";
 import { Check, Copy, Link2, Mail, MessageSquare, Send } from "lucide-react";
 import { useState, useTransition } from "react";
 
@@ -40,8 +41,10 @@ export function SendInviteButton({
   guest: SendableGuest;
   outbound: OutboundStatus;
 }) {
+  const { canEdit } = usePartyAccess();
   const [open, setOpen] = useState(false);
   const sent = lastSentLabel(guest.lastSentAt, guest.lastSentChannel);
+  if (!canEdit) return null;
 
   return (
     <>
@@ -69,7 +72,9 @@ export function SendAllInvitesButton({
   outbound: OutboundStatus;
   shareToken: string;
 }) {
+  const { canEdit } = usePartyAccess();
   const [open, setOpen] = useState(false);
+  if (!canEdit) return null;
   return (
     <>
       <button type="button" className="btn-primary" onClick={() => setOpen(true)}>
@@ -173,7 +178,7 @@ function SendInviteDialog({
           selected={channel === "email"}
           icon={Mail}
           title="Email"
-          body="Sends the invite plus a Google Calendar button and .ics file."
+          body="Sends the invitation with the RSVP link and Google Calendar option."
           onClick={() => {
             setChannel("email");
             setStatus(null);

@@ -1,6 +1,7 @@
 import { PartyListItem } from "@/components/party/party-list-item";
 import { formatPartyWhen } from "@/lib/calendar";
 import type { Database } from "@/lib/database.types";
+import { canManagePartyRole } from "@/lib/party/roles";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthenticatedUserId } from "@/lib/supabase/auth";
 import { Plus } from "lucide-react";
@@ -73,7 +74,7 @@ export default async function PartiesPage() {
         dishes={dishes}
         countdown={countdown}
         role={role}
-        canDelete={party.owner_id === userId}
+        canDelete={canManagePartyRole(role)}
         tense={tense}
       />
     );

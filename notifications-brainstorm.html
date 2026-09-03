@@ -1,0 +1,1125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>plated. — what should ping the phone?</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --paper: #f4f0e7;
+      --paper-2: #e8e1d5;
+      --ink: #29231f;
+      --tomato: #c84432;
+      --orange: #d95f35;
+      --wine: #783c37;
+      --olive: #687056;
+      --blush: #d9b9ae;
+      --gold: #b79b62;
+      --phone: #1c1816;
+      --font-display: "Cormorant Garamond", Georgia, serif;
+      --font-body: "DM Sans", "Helvetica Neue", sans-serif;
+      --font-hand: "Caveat", cursive;
+      --max: 1080px;
+      --sticky-h: 4.5rem;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(ellipse 70% 40% at 0% 0%, rgba(217, 185, 174, 0.35), transparent 55%),
+        radial-gradient(ellipse 50% 30% at 100% 8%, rgba(200, 68, 50, 0.08), transparent 50%),
+        var(--paper);
+      color: var(--ink);
+      font-family: var(--font-body);
+      font-size: 15.5px;
+      line-height: 1.55;
+      padding-bottom: calc(var(--sticky-h) + 2rem);
+    }
+    a { color: var(--tomato); }
+    button, input, textarea, select { font: inherit; }
+    button { cursor: pointer; }
+    :focus-visible {
+      outline: 2px solid var(--tomato);
+      outline-offset: 2px;
+    }
+
+    .wrap { max-width: var(--max); margin: 0 auto; padding: 2rem 1.15rem 1rem; }
+
+    .eyebrow {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--wine);
+    }
+    h1 {
+      font-family: var(--font-display);
+      font-size: clamp(2.4rem, 6vw, 4.1rem);
+      font-weight: 600;
+      line-height: 0.95;
+      letter-spacing: -0.03em;
+      margin: 0.35rem 0 0.8rem;
+    }
+    h1 em { font-style: italic; color: var(--tomato); }
+    .lede { max-width: 42rem; color: rgba(41, 35, 31, 0.62); font-size: 1.02rem; }
+    .hand {
+      font-family: var(--font-hand);
+      font-size: 1.35rem;
+      color: var(--wine);
+      transform: rotate(-1.2deg);
+      display: inline-block;
+    }
+
+    .meta {
+      display: flex; flex-wrap: wrap; gap: 0.45rem;
+      margin: 1.25rem 0 2rem;
+    }
+    .chip {
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      border: 1px solid rgba(41, 35, 31, 0.12);
+      background: rgba(255, 255, 255, 0.45);
+      padding: 0.28rem 0.6rem;
+      border-radius: 999px;
+    }
+
+    .callout {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: 1fr;
+      margin: 0 0 2.25rem;
+    }
+    @media (min-width: 800px) {
+      .callout { grid-template-columns: 1.3fr 0.9fr; }
+    }
+    .card {
+      background: rgba(255, 255, 255, 0.55);
+      border: 1px solid rgba(41, 35, 31, 0.1);
+      border-radius: 1.4rem;
+      padding: 1.15rem 1.25rem 1.25rem;
+      box-shadow: 0 18px 40px -28px rgba(41, 35, 31, 0.35);
+    }
+    .card h2 {
+      font-family: var(--font-display);
+      font-size: 1.65rem;
+      margin: 0.2rem 0 0.55rem;
+    }
+    .card ul { margin: 0.4rem 0 0; padding-left: 1.1rem; color: rgba(41, 35, 31, 0.72); }
+    .card li { margin: 0.28rem 0; }
+
+    .legend {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.55rem;
+    }
+    @media (min-width: 560px) { .legend { grid-template-columns: repeat(5, 1fr); } }
+    .legend div {
+      border: 1px solid rgba(41, 35, 31, 0.1);
+      border-radius: 0.9rem;
+      padding: 0.55rem 0.65rem;
+      background: var(--paper);
+    }
+    .legend strong {
+      display: block;
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 0.2rem;
+    }
+    .legend span { font-size: 0.78rem; color: rgba(41, 35, 31, 0.62); }
+
+    nav.toc {
+      display: flex; flex-wrap: wrap; gap: 0.4rem;
+      margin: 0 0 1.75rem;
+      position: sticky; top: 0; z-index: 4;
+      background: color-mix(in srgb, var(--paper) 88%, white);
+      backdrop-filter: blur(8px);
+      padding: 0.55rem 0;
+    }
+    nav.toc a {
+      text-decoration: none;
+      color: var(--ink);
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 0.4rem 0.7rem;
+      border-radius: 999px;
+      border: 1px solid rgba(41, 35, 31, 0.12);
+      background: white;
+    }
+    nav.toc a:hover { border-color: var(--tomato); color: var(--tomato); }
+
+    section.group { margin: 0 0 2.4rem; }
+    section.group > h2 {
+      font-family: var(--font-display);
+      font-size: clamp(1.8rem, 3vw, 2.4rem);
+      margin: 0 0 0.25rem;
+    }
+    .group-lede { color: rgba(41, 35, 31, 0.58); margin: 0 0 1rem; max-width: 40rem; }
+
+    .item {
+      display: grid;
+      gap: 0.9rem;
+      grid-template-columns: 1fr;
+      padding: 1.05rem 0;
+      border-top: 1px solid rgba(41, 35, 31, 0.1);
+    }
+    @media (min-width: 780px) {
+      .item { grid-template-columns: minmax(0, 1.15fr) 220px minmax(0, 1fr); align-items: start; }
+    }
+    .item h3 {
+      font-size: 1.02rem;
+      margin: 0 0 0.3rem;
+    }
+    .why { font-size: 0.9rem; color: rgba(41, 35, 31, 0.62); margin: 0; }
+    .who {
+      display: inline-block;
+      margin-top: 0.45rem;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--olive);
+    }
+    .rec {
+      font-family: var(--font-hand);
+      font-size: 1.15rem;
+      color: var(--tomato);
+      margin-top: 0.15rem;
+    }
+
+    .phone {
+      background: var(--phone);
+      color: #f7f1e8;
+      border-radius: 1.15rem;
+      padding: 0.7rem 0.8rem 0.85rem;
+      min-height: 5.4rem;
+      box-shadow: 0 12px 28px -16px rgba(0, 0, 0, 0.55);
+    }
+    .phone .bar {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 0.62rem; letter-spacing: 0.04em; opacity: 0.55; margin-bottom: 0.45rem;
+    }
+    .phone .app { font-weight: 700; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--blush); }
+    .phone .title { font-weight: 650; font-size: 0.92rem; line-height: 1.25; }
+    .phone .body { font-size: 0.8rem; opacity: 0.78; margin-top: 0.15rem; }
+
+    fieldset.channels {
+      border: 0; margin: 0; padding: 0;
+      display: flex; flex-wrap: wrap; gap: 0.35rem;
+    }
+    fieldset.channels legend {
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: rgba(41, 35, 31, 0.45);
+      margin-bottom: 0.4rem;
+    }
+    .opt {
+      position: relative;
+    }
+    .opt input { position: absolute; opacity: 0; pointer-events: none; }
+    .opt span {
+      display: inline-block;
+      padding: 0.38rem 0.58rem;
+      border-radius: 999px;
+      border: 1px solid rgba(41, 35, 31, 0.14);
+      background: white;
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+    .opt input:checked + span {
+      background: var(--ink);
+      color: var(--paper);
+      border-color: var(--ink);
+    }
+    .opt input:focus-visible + span {
+      outline: 2px solid var(--tomato);
+      outline-offset: 2px;
+    }
+    .ship {
+      display: flex; align-items: center; gap: 0.4rem;
+      margin-top: 0.65rem;
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+    .ship input { accent-color: var(--tomato); width: 1rem; height: 1rem; }
+
+    .skip-list .item { grid-template-columns: 1fr; }
+    .muted { color: rgba(41, 35, 31, 0.5); }
+
+    .q-grid {
+      display: grid;
+      gap: 0.8rem;
+    }
+    @media (min-width: 760px) { .q-grid { grid-template-columns: 1fr 1fr; } }
+    .q {
+      background: rgba(255,255,255,0.5);
+      border: 1px solid rgba(41, 35, 31, 0.1);
+      border-radius: 1.15rem;
+      padding: 1rem 1.1rem;
+    }
+    .q h3 { margin: 0 0 0.7rem; font-size: 0.95rem; }
+    .q label {
+      display: flex; gap: 0.5rem; align-items: flex-start;
+      margin: 0.4rem 0; font-size: 0.88rem; color: rgba(41, 35, 31, 0.78);
+    }
+    .q input { margin-top: 0.2rem; accent-color: var(--tomato); }
+
+    textarea {
+      width: 100%;
+      min-height: 7rem;
+      border-radius: 1rem;
+      border: 1px solid rgba(41, 35, 31, 0.14);
+      background: white;
+      padding: 0.85rem 1rem;
+      resize: vertical;
+    }
+
+    .dock {
+      position: fixed; left: 0; right: 0; bottom: 0;
+      background: rgba(41, 35, 31, 0.94);
+      color: var(--paper);
+      padding: 0.75rem 1rem;
+      display: flex; flex-wrap: wrap; gap: 0.7rem; align-items: center; justify-content: space-between;
+      z-index: 10;
+    }
+    .dock p { margin: 0; font-size: 0.85rem; }
+    .dock button {
+      background: var(--tomato);
+      color: white;
+      border: 0;
+      border-radius: 999px;
+      padding: 0.7rem 1.15rem;
+      font-weight: 700;
+    }
+    .dock button:hover { background: var(--orange); }
+
+    footer.doc {
+      margin-top: 2rem;
+      padding-top: 1rem;
+      border-top: 1px solid rgba(41, 35, 31, 0.1);
+      font-size: 0.78rem;
+      color: rgba(41, 35, 31, 0.45);
+    }
+
+    @media print {
+      .dock, nav.toc { display: none; }
+      body { padding-bottom: 0; background: white; }
+      .phone { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <p class="eyebrow">plated. · notifications brainstorm</p>
+    <h1>What deserves <em>the lock screen</em>?</h1>
+    <p class="lede">
+      iOS home-screen web apps can send real push notifications. That is a scarce, easy-to-ruin privilege.
+      The inbox can be chatty. The phone should only speak when something changes dinner, the kitchen, or a guest’s plan.
+    </p>
+    <p class="hand">Flip any pick — recommended defaults are already set.</p>
+    <div class="meta">
+      <span class="chip">iOS 16.4+ PWA</span>
+      <span class="chip">Add to Home Screen required</span>
+      <span class="chip">Hosts first, guests via SMS/email</span>
+      <span class="chip">Sep 1, 2026</span>
+    </div>
+
+    <div class="callout">
+      <article class="card">
+        <p class="eyebrow">Constraint</p>
+        <h2>Two layers, not one firehose</h2>
+        <ul>
+          <li><strong>Push</strong> for time-sensitive or action-needed moments, even if plated. is closed.</li>
+          <li><strong>Inbox</strong> for the existing activity feed — already mocked at <code>/app/inbox</code>.</li>
+          <li><strong>Digest</strong> when many small events (RSVPs) would otherwise tap the phone every two minutes.</li>
+          <li><strong>SMS / email</strong> for guests who never install the app. Invites already go this way — don’t double-ping.</li>
+        </ul>
+        <p style="margin: 0.85rem 0 0; font-size: 0.9rem; color: rgba(41,35,31,0.62);">
+          Permission has to come from a tap, after the user has a party worth caring about — not on first login.
+          Guests RSVPing from an invite link have no Web Push identity unless they create an account and install.
+        </p>
+      </article>
+      <article class="card">
+        <p class="eyebrow">Channel key</p>
+        <div class="legend" style="grid-template-columns: 1fr;">
+          <div><strong>Push</strong><span>Lock screen. Use sparingly.</span></div>
+          <div><strong>Inbox</strong><span>In-app only. Fine to be noisier.</span></div>
+          <div><strong>Digest</strong><span>One batched push, not 12 singles.</span></div>
+          <div><strong>SMS / email</strong><span>Guests without the PWA.</span></div>
+          <div><strong>Skip</strong><span>Don’t notify anyone.</span></div>
+        </div>
+      </article>
+    </div>
+
+    <nav class="toc" aria-label="Jump">
+      <a href="#host-guests">Guests &amp; RSVPs</a>
+      <a href="#kitchen">Kitchen day</a>
+      <a href="#ops">Host ops</a>
+      <a href="#guests">Guest pings</a>
+      <a href="#skip">Don’t ping</a>
+      <a href="#questions">Open questions</a>
+    </nav>
+
+    <form id="picks">
+      <section class="group" id="host-guests">
+        <h2>Host: guests &amp; RSVPs</h2>
+        <p class="group-lede">This is the social heartbeat. Instant yes-pings feel great until twelve of them land during grocery shopping.</p>
+
+        <article class="item" data-id="rsvp-yes">
+          <div>
+            <h3>Someone RSVPs yes / maybe / no</h3>
+            <p class="why">You already recalculate headcount, shopping, and timeline. The host wants to know the room is filling — not a tap per cousin.</p>
+            <span class="who">Owner · manager</span>
+            <div class="rec">Rec: digest</div>
+          </div>
+          <div class="phone" aria-hidden="true">
+            <div class="bar"><span>plated.</span><span>now</span></div>
+            <div class="app">plated.</div>
+            <div class="title">4 RSVPs since lunch</div>
+            <div class="body">Nina and Maya are in. Alex declined. 2 still silent.</div>
+          </div>
+          <div>
+            <fieldset class="channels">
+              <legend>Channel</legend>
+              <label class="opt"><input type="radio" name="rsvp-yes" value="push"><span>Push</span></label>
+              <label class="opt"><input type="radio" name="rsvp-yes" value="inbox"><span>Inbox</span></label>
+              <label class="opt"><input type="radio" name="rsvp-yes" value="digest" checked><span>Digest</span></label>
+              <label class="opt"><input type="radio" name="rsvp-yes" value="sms"><span>SMS / email</span></label>
+              <label class="opt"><input type="radio" name="rsvp-yes" value="skip"><span>Skip</span></label>
+            </fieldset>
+            <label class="ship"><input type="checkbox" name="ship-rsvp-yes" checked> Ship in v1</label>
+          </div>
+        </article>
+
+        <article class="item" data-id="allergy-flag">
+          <div>
+            <h3>New allergy or diet flags the menu</h3>
+            <p class="why">This is the one RSVP that should break the digest. Two recipes already get highlighted in the app — the host needs to act, not find out Saturday.</p>
+            <span class="who">Owner · manager · editor</span>
+            <div class="rec">Rec: push, immediately</div>
+          </div>
+          <div class="phone" aria-hidden="true">
+            <div class="bar"><span>plated.</span><span>now</span></div>
+            <div class="app">plated.</div>
+            <div class="title">Nina noted gluten</div>
+            <div class="body">Two Saturday dishes are flagged. Review before shopping.</div>
+          </div>
+          <div>
+            <fieldset class="channels">
+              <legend>Channel</legend>
+              <label class="opt"><input type="radio" name="allergy-flag" value="push" checked><span>Push</span></label>
+              <label class="opt"><input type="radio" name="allergy-flag" value="inbox"><span>Inbox</span></label>
+              <label class="opt"><input type="radio" name="allergy-flag" value="digest"><span>Digest</span></label>
+              <label class="opt"><input type="radio" name="allergy-flag" value="sms"><span>SMS / email</span></label>
+              <label class="opt"><input type="radio" name="allergy-flag" value="skip"><span>Skip</span></label>
+            </fieldset>
+            <label class="ship"><input type="checkbox" name="ship-allergy-flag" checked> Ship in v1</label>
+          </div>
+        </article>
+
+        <article class="item" data-id="headcount-jump">
+          <div>
+            <h3>Plus-ones / headcount jumps enough to restock</h3>
+            <p class="why">A plus-one is inbox trivia until the shopping list actually grows. Threshold, not every +1.</p>
+            <span class="who">Owner · manager</span>
+            <div class="rec">Rec: push only if quantities change</div>
+          </div>
+          <div class="phone" aria-hidden="true">
+            <div class="bar"><span>plated.</span><span>now</span></div>
+            <div class="app">plated.</div>
+            <div class="title">You’re cooking for 14 now</div>
+            <div class="body">Shopping list grew by 6 items after Maya’s plus-ones.</div>
+          </div>
+          <div>
+            <fieldset class="channels">
+              <legend>Channel</legend>
+              <label class="opt"><input type="radio" name="headcount-jump" value="push" checked><span>Push</span></label>
+              <label class="opt"><input type="radio" name="headcount-jump" value="inbox"><span>Inbox</span></label>
+              <label class="opt"><input type="radio" name="headcount-jump" value="digest"><span>Digest</span></label>
+              <label class="opt"><input type="radio" name="headcount-jump" value="sms"><span>SMS / email</span></label>
+              <label class="opt"><input type="radio" name="headcount-jump" value="skip"><span>Skip</span></label>
+            </fieldset>
+            <label class="ship"><input type="checkbox" name="ship-headcount-jump"> Ship in v1</label>
+          </div>
+        </article>
+
+        <article class="item" data-id="invite-failed">
+          <div>
+            <h3>Invite failed to send</h3>
+            <p class="why">You already track delivery status. A bounced SMS or missing number is an action, not a status badge.</p>
+            <span class="who">Whoever hit send</span>
+            <div class="rec">Rec: push</div>
+          </div>
+          <div class="phone" aria-hidden="true">
+            <div class="bar"><span>plated.</span><span>now</span></div>
+            <div class="app">plated.</div>
+            <div class="title">Alex never got the invite</div>
+            <div class="body">SMS failed — number looks off. 11 of 12 delivered.</div>
+          </div>
+          <div>
+            <fieldset class="channels">
+              <legend>Channel</legend>
+              <label class="opt"><input type="radio" name="invite-failed" value="push" checked><span>Push</span></label>
+              <label class="opt"><input type="radio" name="invite-failed" value="inbox"><span>Inbox</span></label>
+              <label class="opt"><input type="radio" name="invite-failed" value="digest"><span>Digest</span></label>
+              <label class="opt"><input type="radio" name="invite-failed" value="sms"><span>SMS / email</span></label>
+              <label class="opt"><input type="radio" name="invite-failed" value="skip"><span>Skip</span></label>
+            </fieldset>
+            <label class="ship"><input type="checkbox" name="ship-invite-failed" checked> Ship in v1</label>
+          </div>
+        </article>
+
+        <article class="item" data-id="rsvp-nudge-host">
+          <div>
+            <h3>Silent guests — time to nudge</h3>
+            <p class="why">A scheduled host prompt a few days out: “6 people haven’t replied. Send a reminder?” Better than auto-spamming the guest list.</p>
+            <span class="who">Owner · manager</span>
+            <div class="rec">Rec: inbox + one optional push</div>
+          </div>
+          <div class="phone" aria-hidden="true">
+            <div class="bar"><span>plated.</span><span>Tue</span></div>
+            <div class="app">plated.</div>
+            <div class="title">6 people still haven’t replied</div>
+            <div class="body">Saturday is four days out. Nudge them from Guests?</div>
+          </div>
+          <div>
+            <fieldset class="channels">
+              <legend>Channel</legend>
+              <label class="opt"><input type="radio" name="rsvp-nudge-host" value="push"><span>Push</span></label>
+              <label class="opt"><input type="radio" name="rsvp-nudge-host" value="inbox" checked><span>Inbox</span></label>
+              <label class="opt"><input type="radio" name="rsvp-nudge-host" value="digest"><span>Digest</span></label>
+              <label class="opt"><input type="radio" name="rsvp-nudge-host" value="sms"><span>SMS / email</span></label>
+              <label class="opt"><input type="radio" name="rsvp-nudge-host" value="skip"><span>Skip</span></label>
+            </fieldset>
+            <label class="ship"><input type="checkbox" name="ship-rsvp-nudge-host" checked> Ship in v1</label>
+          </div>
+        </article>
+      </section>
+
+      <section class="group" id="kitchen">
+        <h2>Kitchen day — the reason to install</h2>
+        <p class="group-lede">If plated. lives on the home screen, this is the feature that earns it. Helpers cooking from their phones, timers that don’t live in another app.</p>
+
+        <article class="item" data-id="task-assigned">
+          <div>
+            <h3>A task is assigned to you</h3>
+            <p class="why">Helpers shouldn’t have to open the timeline to discover they own marinade. Skip if you assigned it to yourself.</p>
+            <span class="who">Assigned helper · collaborator</span>
+            <div class="rec">Rec: push</div>
+          </div>
+          <div class="phone" aria-hidden="true">
+            <div class="bar"><span>plated.</span><span>now</span></div>
+            <div class="app">plated.</div>
+            <div class="title">You’re on the marinade</div>
+            <div class="body">Friday 6:00pm · chicken, Saturday’s party.</div>
+          </div>
+          <div>
+            <fieldset class="channels">
+              <legend>Channel</legend>
+              <label class="opt"><input type="radio" name="task-assigned" value="push" checked><span>Push</span></label>
+              <label class="opt"><input type="radio" name="task-assigned" value="inbox"><span>Inbox</span></label>
+              <label class="opt"><input type="radio" name="task-assigned" value="digest"><span>Digest</span></label>
+              <label class="opt"><input type="radio" name="task-assigned" value="sms"><span>SMS / email</span></label>
+              <label class="opt"><input type="radio" name="task-assigned" value="skip"><span>Skip</span></label>
+            </fieldset>
+            <label class="ship"><input type="checkbox" name="ship-task-assigned" checked> Ship in v1</label>
+          </div>
+        </article>
+
+        <article class="item" data-id="task-starting">
+          <div>
+            <h3>Your next task is starting</h3>
+            <p class="why">The product spec already wants check-ins and a live timeline. A 15–20 minute heads-up on party day is the native-app moment.</p>
+            <span class="who">Whoever the task is assigned to · host if unassigned</span>
+            <div class="rec">Rec: push, party day only</div>
+          </div>
+          <div class="phone" aria-hidden="true">
+            <div class="bar"><span>plated.</span><span>2:41</span></div>
+            <div class="app">plated.</div>
+            <div class="title">Time to sear the duck</div>
+            <div class="body">Starts in 20 minutes · 25 min on the clock.</div>
+          </div>
+          <div>
+            <fieldset class="channels">
+              <legend>Channel</legend>
+              <label class="opt"><input type="radio" name="task-starting" value="push" checked><span>Push</span></label>
+              <label class="opt"><input type="radio" name="task-starting" value="inbox"><span>Inbox</span></label>
+              <label class="opt"><input type="radio" name="task-starting" value="digest"><span>Digest</span></label>
+              <label class="opt"><input type="radio" name="task-starting" value="sms"><span>SMS / email</span></label>
+              <label class="opt"><input type="radio" name="task-starting" value="skip"><span>Skip</span></label>
+            </fieldset>
+            <label class="ship"><input type="checkbox" name="ship-task-starting" checked> Ship in v1</label>
+          </div>
+        </article>
+
+        <article class="item" data-id="unblocked">
+          <div>
+            <h3>You’re unblocked — someone finished the step before you</h3>
+            <p class="why">Dependency-aware timeline is already in the data model. This is how co-hosts stay in rhythm without shouting across the kitchen.</p>
+            <span class="who">Next assigned helper</span>
+            <div class="rec">Rec: push on party day</div>
+          </div>
+          <div class="phone" aria-hidden="true">
+            <div class="bar"><span>plated.</span><span>now</span></div>
+            <div class="app">plated.</div>
+            <div class="title">Maya finished the dough</div>
+            <div class="body">You’re up: shape the focaccia.</div>
+          </div>
+          <div>
+            <fieldset class="channels">
+              <legend>Channel</legend>
+              <label class="opt"><input type="radio" name="unblocked" value="push" checked><span>Push</span></label>
+              <label class="opt"><input type="radio" name="unblocked" value="inbox"><span>Inbox</span></label>
+              <label class="opt"><input type="radio" name="unblocked" value="digest"><span>Digest</span></label>
+              <label class="opt"><input type="radio" name="unblocked" value="sms"><span>SMS / email</span></label>
+              <label class="opt"><input type="radio" name="unblocked" value="skip"><span>Skip</span></label>
+            </fieldset>
+            <label class="ship"><input type="checkbox" name="ship-unblocked"> Ship in v1</label>
+          </div>
+        </article>
+
+        <article class="item" data-id="check-in">
+          <div>
+            <h3>Timeline check-in: did that finish?</h3>
+            <p class="why">Spec §17.3 already asks this. A missed marinade should move the board, not silently lie.</p>
+            <span class="who">Assigned person</span>
+            <div class="rec">Rec: push, then inbox if ignored</div>
+          </div>
+          <div class="phone" aria-hidden="true">
+            <div class="bar"><span>plated.</span><span>now</span></div>
+            <div class="app">plated.</div>
+            <div class="title">Still marinating?</div>
+            <div class="body">Check in so Saturday’s timeline stays honest.</div>
+          </div>
+          <div>
+            <fieldset class="channels">
+              <legend>Channel</legend>
+              <label class="opt"><input type="radio" name="check-in" value="push" checked><span>Push</span></label>
+              <label class="opt"><input type="radio" name="check-in" value="inbox"><span>Inbox</span></label>
+              <label class="opt"><input type="radio" name="check-in" value="digest"><span>Digest</span></label>
+              <label class="opt"><input type="radio" name="check-in" value="sms"><span>SMS / email</span></label>
+              <label class="opt"><input type="radio" name="check-in" value="skip"><span>Skip</span></label>
+            </fieldset>
+            <label class="ship"><input type="checkbox" name="ship-check-in"> Ship in v1</label>
+          </div>
+        </article>
+
+        <article class="item" data-id="prep-window">
+          <div>
+            <h3>Prep window opens / first task of the day</h3>
+            <p class="why">You already store <code>prep_starts_at</code>. One morning ping beats a dozen “don’t forget the party” nags.</p>
+            <span class="who">Owner · helpers with tasks today</span>
+            <div class="rec">Rec: one push</div>
+          </div>
+          <div class="phone" aria-hidden="true">
+            <div class="bar"><span>plated.</span><span>9:00</span></div>
+            <div class="app">plated.</div>
+            <div class="title">Kitchen day.</div>
+            <div class="body">First up: brine the chicken at 9:00am.</div>
+          </div>
+          <div>
+            <fieldset class="channels">
+              <legend>Channel</legend>
+              <label class="opt"><input type="radio" name="prep-window" value="push" checked><span>Push</span></label>
+              <label class="opt"><input type="radio" name="prep-window" value="inbox"><span>Inbox</span></label>
+              <label class="opt"><input type="radio" name="prep-window" value="digest"><span>Digest</span></label>
+              <label class="opt"><input type="radio" name="prep-window" value="sms"><span>SMS / email</span></label>
+              <label class="opt"><input type="radio" name="prep-window" value="skip"><span>Skip</span></label>
+            </fieldset>
+            <label class="ship"><input type="checkbox" name="ship-prep-window" checked> Ship in v1</label>
+          </div>
+        </article>
+
+        <article class="item" data-id="allergy-service">
+          <div>
+            <h3>Service-time allergy reminder</h3>
+            <p class="why">Planning-week flags are one thing. Plating family-style focaccia next to Nina is another. Optional, but very plated.</p>
+            <span class="who">Host · whoever is plating</span>
+            <div class="rec">Rec: later, not v1</div>
+          </div>
+          <div class="phone" aria-hidden="true">
+            <div class="bar"><span>plated.</span><span>7:12</span></div>
+            <div class="app">plated.</div>
+            <div class="title">Nina: no gluten</div>
+            <div class="body">Don’t send the focaccia down without a callout.</div>
+          </div>
+          <div>
+            <fieldset class="channels">
+              <legend>Channel</legend>
+              <label class="opt"><input type="radio" name="allergy-service" value="push"><span>Push</span></label>
+              <label class="opt"><input type="radio" name="allergy-service" value="inbox"><span>Inbox</span></label>
+              <label class="opt"><input type="radio" name="allergy-service" value="digest"><span>Digest</span></label>
+              <label class="opt"><input type="radio" name="allergy-service" value="sms"><span>SMS / email</span></label>
+              <label class="opt"><input type="radio" name="allergy-service" value="skip" checked><span>Skip</span></label>
+            </fieldset>
+            <label class="ship"><input type="checkbox" name="ship-allergy-service"> Ship in v1</label>
+          </div>
+        </article>
+      </section>
+
+      <section class="group" id="ops">
+        <h2>Host ops &amp; collaborators</h2>
+        <p class="group-lede">Useful, but easy to make plated. feel like a project tool. Default quieter.</p>
+
+        <article class="item" data-id="party-moved">
+          <div>
+            <h3>Time, date, or location changed</h3>
+            <p class="why">Everyone who planned around 7pm needs to know. Hosts via push; guests via SMS/email unless they installed.</p>
+            <span class="who">All collaborators · all guests</span>
+            <div class="rec">Rec: push + SMS/email to guests</div>
+          </div>
+          <div class="phone" aria-hidden="true">
+            <div class="bar"><span>plated.</span><span>now</span></div>
+            <div class="app">plated.</div>
+            <div class="title">Saturday moved to 7:30pm</div>
+            <div class="body">Maya’s place, same dress code. Timeline shifted 30 min.</div>
+          </div>
+          <div>
+            <fieldset class="channels">
+              <legend>Channel</legend>
+              <label class="opt"><input type="radio" name="party-moved" value="push" checked><span>Push</span></label>
+              <label class="opt"><input type="radio" name="party-moved" value="inbox"><span>Inbox</span></label>
+              <label class="opt"><input type="radio" name="party-moved" value="digest"><span>Digest</span></label>
+              <label class="opt"><input type="radio" name="party-moved" value="sms"><span>SMS / email</span></label>
+              <label class="opt"><input type="radio" name="party-moved" value="skip"><span>Skip</span></label>
+            </fieldset>
+            <label class="ship"><input type="checkbox" name="ship-party-moved" checked> Ship in v1</label>
+          </div>
+        </article>
+
+        <article class="item" data-id="collaborator-added">
+          <div>
+            <h3>You were added as a collaborator</h3>
+            <p class="why">The “you’re invited to cook, not just eat” moment. Distinct from a guest invite.</p>
+            <span class="who">New member</span>
+            <div class="rec">Rec: push if they have the app, else email</div>
+          </div>
+          <div class="phone" aria-hidden="true">
+            <div class="bar"><span>plated.</span><span>now</span></div>
+            <div class="app">plated.</div>
+            <div class="title">Lukas added you to Saturday</div>
+            <div class="body">You’re a helper. Open the timeline when you can.</div>
+          </div>
+          <div>
+            <fieldset class="channels">
+              <legend>Channel</legend>
+              <label class="opt"><input type="radio" name="collaborator-added" value="push" checked><span>Push</span></label>
+              <label class="opt"><input type="radio" name="collaborator-added" value="inbox"><span>Inbox</span></label>
+              <label class="opt"><input type="radio" name="collaborator-added" value="digest"><span>Digest</span></label>
+              <label class="opt"><input type="radio" name="collaborator-added" value="sms"><span>SMS / email</span></label>
+              <label class="opt"><input type="radio" name="collaborator-added" value="skip"><span>Skip</span></label>
+            </fieldset>
+            <label class="ship"><input type="checkbox" name="ship-collaborator-added" checked> Ship in v1</label>
+          </div>
+        </article>
+
+        <article class="item" data-id="shopping-morning">
+          <div>
+            <h3>Unchecked groceries the morning of</h3>
+            <p class="why">Not every checkbox. One “you still need lemons and cream, dinner is tonight.”</p>
+            <span class="who">Owner · whoever shops</span>
+            <div class="rec">Rec: push, once</div>
+          </div>
+          <div class="phone" aria-hidden="true">
+            <div class="bar"><span>plated.</span><span>10:12</span></div>
+            <div class="app">plated.</div>
+            <div class="title">3 grocery items still open</div>
+            <div class="body">Dinner is tonight. Lemons, cream, parsley.</div>
+          </div>
+          <div>
+            <fieldset class="channels">
+              <legend>Channel</legend>
+              <label class="opt"><input type="radio" name="shopping-morning" value="push" checked><span>Push</span></label>
+              <label class="opt"><input type="radio" name="shopping-morning" value="inbox"><span>Inbox</span></label>
+              <label class="opt"><input type="radio" name="shopping-morning" value="digest"><span>Digest</span></label>
+              <label class="opt"><input type="radio" name="shopping-morning" value="sms"><span>SMS / email</span></label>
+              <label class="opt"><input type="radio" name="shopping-morning" value="skip"><span>Skip</span></label>
+            </fieldset>
+            <label class="ship"><input type="checkbox" name="ship-shopping-morning"> Ship in v1</label>
+          </div>
+        </article>
+
+        <article class="item" data-id="menu-guest-visible">
+          <div>
+            <h3>Guest-facing menu or dress code changed</h3>
+            <p class="why">Draft edits should be silent. Publishing, or changing what guests already saw, is not.</p>
+            <span class="who">Guests · other hosts (inbox)</span>
+            <div class="rec">Rec: SMS/email to guests; inbox for hosts</div>
+          </div>
+          <div class="phone" aria-hidden="true">
+            <div class="bar"><span>plated.</span><span>now</span></div>
+            <div class="app">plated.</div>
+            <div class="title">Menu update for Saturday</div>
+            <div class="body">Dessert swapped. Cocktail attire still stands.</div>
+          </div>
+          <div>
+            <fieldset class="channels">
+              <legend>Channel</legend>
+              <label class="opt"><input type="radio" name="menu-guest-visible" value="push"><span>Push</span></label>
+              <label class="opt"><input type="radio" name="menu-guest-visible" value="inbox"><span>Inbox</span></label>
+              <label class="opt"><input type="radio" name="menu-guest-visible" value="digest"><span>Digest</span></label>
+              <label class="opt"><input type="radio" name="menu-guest-visible" value="sms" checked><span>SMS / email</span></label>
+              <label class="opt"><input type="radio" name="menu-guest-visible" value="skip"><span>Skip</span></label>
+            </fieldset>
+            <label class="ship"><input type="checkbox" name="ship-menu-guest-visible"> Ship in v1</label>
+          </div>
+        </article>
+
+        <article class="item" data-id="helper-complete">
+          <div>
+            <h3>A helper marked a task complete</h3>
+            <p class="why">Great for the inbox. Terrible as twelve lock-screen taps while you’re at the store.</p>
+            <span class="who">Owner · manager</span>
+            <div class="rec">Rec: inbox</div>
+          </div>
+          <div class="phone" aria-hidden="true">
+            <div class="bar"><span>plated.</span><span>yest.</span></div>
+            <div class="app">plated.</div>
+            <div class="title">Maya finished ‘Marinate chicken’</div>
+            <div class="body">Next dependent task is still on schedule.</div>
+          </div>
+          <div>
+            <fieldset class="channels">
+              <legend>Channel</legend>
+              <label class="opt"><input type="radio" name="helper-complete" value="push"><span>Push</span></label>
+              <label class="opt"><input type="radio" name="helper-complete" value="inbox" checked><span>Inbox</span></label>
+              <label class="opt"><input type="radio" name="helper-complete" value="digest"><span>Digest</span></label>
+              <label class="opt"><input type="radio" name="helper-complete" value="sms"><span>SMS / email</span></label>
+              <label class="opt"><input type="radio" name="helper-complete" value="skip"><span>Skip</span></label>
+            </fieldset>
+            <label class="ship"><input type="checkbox" name="ship-helper-complete" checked> Ship in v1</label>
+          </div>
+        </article>
+      </section>
+
+      <section class="group" id="guests">
+        <h2>Guests</h2>
+        <p class="group-lede">Most guests will never add plated. to the home screen. Treat SMS/email as the guest notification system; Web Push is a bonus for the rare guest who installs.</p>
+
+        <article class="item" data-id="guest-invite">
+          <div>
+            <h3>You’re invited</h3>
+            <p class="why">Already shipped via email/SMS + invite page. A second push would be rude even if they had the app.</p>
+            <span class="who">Guest</span>
+            <div class="rec">Rec: keep SMS/email only</div>
+          </div>
+          <div class="phone" aria-hidden="true">
+            <div class="bar"><span>Messages</span><span>now</span></div>
+            <div class="app">sms</div>
+            <div class="title">You’re invited to Saturday at Lukas’s</div>
+            <div class="body">Open the invite to RSVP and see the menu.</div>
+          </div>
+          <div>
+            <fieldset class="channels">
+              <legend>Channel</legend>
+              <label class="opt"><input type="radio" name="guest-invite" value="push"><span>Push</span></label>
+              <label class="opt"><input type="radio" name="guest-invite" value="inbox"><span>Inbox</span></label>
+              <label class="opt"><input type="radio" name="guest-invite" value="digest"><span>Digest</span></label>
+              <label class="opt"><input type="radio" name="guest-invite" value="sms" checked><span>SMS / email</span></label>
+              <label class="opt"><input type="radio" name="guest-invite" value="skip"><span>Skip</span></label>
+            </fieldset>
+            <label class="ship"><input type="checkbox" name="ship-guest-invite" checked> Ship in v1</label>
+          </div>
+        </article>
+
+        <article class="item" data-id="guest-rsvp-remind">
+          <div>
+            <h3>RSVP reminder to the guest</h3>
+            <p class="why">Host-triggered or automatic once. Never a daily drip.</p>
+            <span class="who">Guest who hasn’t replied</span>
+            <div class="rec">Rec: SMS/email</div>
+          </div>
+          <div class="phone" aria-hidden="true">
+            <div class="bar"><span>Messages</span><span>Wed</span></div>
+            <div class="app">sms</div>
+            <div class="title">Saturday at Lukas’s — still need you</div>
+            <div class="body">Tap to RSVP. Menu and dress code are on the invite.</div>
+          </div>
+          <div>
+            <fieldset class="channels">
+              <legend>Channel</legend>
+              <label class="opt"><input type="radio" name="guest-rsvp-remind" value="push"><span>Push</span></label>
+              <label class="opt"><input type="radio" name="guest-rsvp-remind" value="inbox"><span>Inbox</span></label>
+              <label class="opt"><input type="radio" name="guest-rsvp-remind" value="digest"><span>Digest</span></label>
+              <label class="opt"><input type="radio" name="guest-rsvp-remind" value="sms" checked><span>SMS / email</span></label>
+              <label class="opt"><input type="radio" name="guest-rsvp-remind" value="skip"><span>Skip</span></label>
+            </fieldset>
+            <label class="ship"><input type="checkbox" name="ship-guest-rsvp-remind" checked> Ship in v1</label>
+          </div>
+        </article>
+
+        <article class="item" data-id="guest-day-before">
+          <div>
+            <h3>Day-before / hour-before “see you there”</h3>
+            <p class="why">Calendar apps already do this if they added the .ics. One plated. ping with address + bring-this is warmer, and useful if they didn’t.</p>
+            <span class="who">Attending guests</span>
+            <div class="rec">Rec: SMS/email; push if installed</div>
+          </div>
+          <div class="phone" aria-hidden="true">
+            <div class="bar"><span>plated.</span><span>Fri</span></div>
+            <div class="app">plated.</div>
+            <div class="title">Tomorrow, 7pm</div>
+            <div class="body">Maya’s — bring wine if you’d like. Cocktail attire.</div>
+          </div>
+          <div>
+            <fieldset class="channels">
+              <legend>Channel</legend>
+              <label class="opt"><input type="radio" name="guest-day-before" value="push"><span>Push</span></label>
+              <label class="opt"><input type="radio" name="guest-day-before" value="inbox"><span>Inbox</span></label>
+              <label class="opt"><input type="radio" name="guest-day-before" value="digest"><span>Digest</span></label>
+              <label class="opt"><input type="radio" name="guest-day-before" value="sms" checked><span>SMS / email</span></label>
+              <label class="opt"><input type="radio" name="guest-day-before" value="skip"><span>Skip</span></label>
+            </fieldset>
+            <label class="ship"><input type="checkbox" name="ship-guest-day-before"> Ship in v1</label>
+          </div>
+        </article>
+      </section>
+
+      <section class="group skip-list" id="skip">
+        <h2>Please don’t ping for these</h2>
+        <p class="group-lede">Inbox maybe. Lock screen never. Pre-set to skip so you can promote any of them.</p>
+
+        <article class="item" data-id="skip-checkboxes">
+          <div>
+            <h3>Shopping checkboxes, draft menu edits, cost estimate ticks, timeline “dirty” banners, recipe import finished, your own actions</h3>
+            <p class="why muted">These are states you can see when you open the app. Pushing them trains people to disable plated. the week of the party.</p>
+            <span class="who">Everyone</span>
+            <div class="rec">Rec: skip (inbox only if it helps debugging later)</div>
+          </div>
+          <div>
+            <fieldset class="channels">
+              <legend>Channel</legend>
+              <label class="opt"><input type="radio" name="skip-checkboxes" value="push"><span>Push</span></label>
+              <label class="opt"><input type="radio" name="skip-checkboxes" value="inbox"><span>Inbox</span></label>
+              <label class="opt"><input type="radio" name="skip-checkboxes" value="digest"><span>Digest</span></label>
+              <label class="opt"><input type="radio" name="skip-checkboxes" value="sms"><span>SMS / email</span></label>
+              <label class="opt"><input type="radio" name="skip-checkboxes" value="skip" checked><span>Skip</span></label>
+            </fieldset>
+            <label class="ship"><input type="checkbox" name="ship-skip-checkboxes"> Ship in v1</label>
+          </div>
+        </article>
+      </section>
+
+      <section class="group" id="questions">
+        <h2>Four calls I won’t make for you</h2>
+        <p class="group-lede">These change the implementation more than any single event type.</p>
+        <div class="q-grid">
+          <article class="q">
+            <h3>1. Guest Web Push?</h3>
+            <label><input type="radio" name="q-guests" value="sms-only" checked> SMS/email is enough. Don’t chase guest install just for push.</label>
+            <label><input type="radio" name="q-guests" value="bonus"> Bonus: if a guest has an account + PWA, they get push too.</label>
+            <label><input type="radio" name="q-guests" value="force"> Lean on guests to install so we can drop SMS later.</label>
+          </article>
+          <article class="q">
+            <h3>2. RSVP cadence to the host</h3>
+            <label><input type="radio" name="q-rsvp" value="instant"> Instant push for every RSVP. I want the dopamine.</label>
+            <label><input type="radio" name="q-rsvp" value="digest" checked> Digest, except allergies which break through.</label>
+            <label><input type="radio" name="q-rsvp" value="inbox"> Inbox only. I’ll open the guests tab.</label>
+          </article>
+          <article class="q">
+            <h3>3. Kitchen-day timers</h3>
+            <label><input type="radio" name="q-kitchen" value="assigned" checked> Only tasks assigned to me (host gets unassigned ones).</label>
+            <label><input type="radio" name="q-kitchen" value="all"> Every upcoming task on the board. I’m the conductor.</label>
+            <label><input type="radio" name="q-kitchen" value="milestones"> Only first-of-day, “you’re up”, and check-ins — not every sauté.</label>
+          </article>
+          <article class="q">
+            <h3>4. When do we ask for notification permission?</h3>
+            <label><input type="radio" name="q-permission" value="after-party" checked> After creating / opening a real party — “keep Saturday on your lock screen?”</label>
+            <label><input type="radio" name="q-permission" value="after-rsvp"> After the first RSVP lands, when the value is obvious.</label>
+            <label><input type="radio" name="q-permission" value="settings"> Settings only. Never a prompt in the flow.</label>
+          </article>
+        </div>
+
+        <article class="card" style="margin-top: 1.2rem;">
+          <p class="eyebrow">Anything I missed</p>
+          <h2>Notes</h2>
+          <label for="notes" class="muted" style="display:block;margin:0 0 0.45rem;">Disagreements, extra events, tone, quiet hours…</label>
+          <textarea id="notes" name="notes" placeholder="e.g. I want instant RSVPs. No shopping pings ever. Helpers without accounts should get SMS for assigned tasks."></textarea>
+        </article>
+      </section>
+    </form>
+
+    <footer class="doc">
+      Last updated Sep 1, 2026 · Grounded in PRODUCT_SPEC §19, the mock inbox, and the live guests / tasks / timeline / invite-delivery models. Not an implementation plan yet.
+    </footer>
+  </div>
+
+  <div class="dock">
+    <p id="tally">Counting…</p>
+    <button type="button" id="submit">Send my picks</button>
+  </div>
+
+  <script>
+(function () {
+  async function submitToClaude(payload, opts) {
+    opts = opts || {};
+    const json = JSON.stringify(payload, null, 2);
+    const url = opts.url || window.__CLAUDE_SUBMIT_URL__;
+    if (url) {
+      try {
+        const r = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: json,
+        });
+        if (r.ok) {
+          notify(opts, opts.serverMessage || window.__CLAUDE_SERVER_MESSAGE__ || 'Submitted to Claude.');
+          return 'server';
+        }
+      } catch (e) {}
+    }
+    return clipboardSubmit(json, opts);
+  }
+  async function clipboardSubmit(json, opts) {
+    const msg = opts.clipboardMessage || window.__CLAUDE_CLIPBOARD_MESSAGE__ || 'Copied to clipboard — paste back into Claude.';
+    return copyToClipboard(json, { ...opts, message: msg, returnTag: 'clipboard' });
+  }
+  async function copyToClipboard(text, opts) {
+    opts = opts || {};
+    const msg = opts.message || 'Copied to clipboard.';
+    if (await tryAsyncClipboard(text)) { notify(opts, msg); return opts.returnTag || 'copied'; }
+    if (copyViaExecCommand(text)) { notify(opts, msg); return opts.returnTag || 'copied'; }
+    showInlineFallback(text);
+    return 'manual';
+  }
+  async function tryAsyncClipboard(text) {
+    try { await navigator.clipboard.writeText(text); return true; } catch (e) { return false; }
+  }
+  function copyViaExecCommand(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    Object.assign(ta.style, { position: 'fixed', top: '0', left: '0', width: '1px', height: '1px', opacity: '0' });
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) {}
+    ta.remove();
+    return ok;
+  }
+  function notify(opts, msg) {
+    if (typeof opts.onResult === 'function') { opts.onResult(msg); return; }
+    const el = document.createElement('div');
+    el.textContent = msg;
+    el.setAttribute('role', 'status');
+    Object.assign(el.style, {
+      position: 'fixed', bottom: '72px', left: '50%', transform: 'translateX(-50%)',
+      background: '#111', color: '#fff', padding: '10px 14px', borderRadius: '8px',
+      font: '14px system-ui', zIndex: 99999, boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+    });
+    document.body.appendChild(el);
+    setTimeout(function () { el.remove(); }, 3500);
+  }
+  function showInlineFallback(json) {
+    const wrap = document.createElement('div');
+    wrap.setAttribute('role', 'region');
+    wrap.setAttribute('aria-label', 'Manual copy required');
+    Object.assign(wrap.style, {
+      position: 'fixed', left: '50%', bottom: '72px', transform: 'translateX(-50%)',
+      width: 'min(720px, calc(100% - 24px))', background: '#111', color: '#fff',
+      borderRadius: '10px', padding: '10px 12px', boxShadow: '0 6px 24px rgba(0,0,0,0.3)',
+      zIndex: 99999, font: '13px system-ui, -apple-system, sans-serif',
+      display: 'grid', gridTemplateColumns: '1fr auto', columnGap: '8px', alignItems: 'start',
+    });
+    const main = document.createElement('div');
+    const msg = document.createElement('div');
+    msg.textContent = 'Auto-copy unavailable here. Press Ctrl+A then Ctrl+C in the box, then paste into chat.';
+    msg.style.marginBottom = '6px';
+    main.appendChild(msg);
+    const ta = document.createElement('textarea');
+    ta.value = json;
+    ta.readOnly = true;
+    ta.spellcheck = false;
+    Object.assign(ta.style, {
+      width: '100%', minHeight: '60px', maxHeight: '160px', resize: 'vertical',
+      padding: '6px 8px', font: '12px ui-monospace, monospace',
+      background: '#fff', color: '#111', border: 'none', borderRadius: '6px', outline: 'none',
+      boxSizing: 'border-box',
+    });
+    main.appendChild(ta);
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.textContent = '×';
+    close.setAttribute('aria-label', 'Dismiss');
+    Object.assign(close.style, {
+      background: 'transparent', border: 'none', color: '#fff', fontSize: '18px',
+      cursor: 'pointer', lineHeight: '1', padding: '2px 4px', alignSelf: 'start',
+    });
+    close.addEventListener('click', function () { wrap.remove(); });
+    wrap.append(main, close);
+    document.body.appendChild(wrap);
+    setTimeout(function () { ta.focus(); ta.select(); }, 0);
+  }
+  window.submitToClaude = submitToClaude;
+  window.copyToClipboard = copyToClipboard;
+})();
+  </script>
+  <script>
+    window.__CLAUDE_SUBMIT_URL__ = 'http://127.0.0.1:53518/';
+    window.__CLAUDE_SERVER_MESSAGE__ = 'Picks sent. I’ll read them in chat.';
+    window.__CLAUDE_CLIPBOARD_MESSAGE__ = 'Copied — paste back into Cursor chat if this didn’t land automatically.';
+
+    const ITEMS = [
+      'rsvp-yes', 'allergy-flag', 'headcount-jump', 'invite-failed', 'rsvp-nudge-host',
+      'task-assigned', 'task-starting', 'unblocked', 'check-in', 'prep-window', 'allergy-service',
+      'party-moved', 'collaborator-added', 'shopping-morning', 'menu-guest-visible', 'helper-complete',
+      'guest-invite', 'guest-rsvp-remind', 'guest-day-before', 'skip-checkboxes'
+    ];
+
+    function collect() {
+      const items = ITEMS.map(function (id) {
+        const channelEl = document.querySelector('input[name="' + id + '"]:checked');
+        const shipEl = document.querySelector('input[name="ship-' + id + '"]');
+        return {
+          id: id,
+          channel: channelEl ? channelEl.value : null,
+          shipV1: !!(shipEl && shipEl.checked),
+        };
+      });
+      const notesEl = document.getElementById('notes');
+      return {
+        items: items,
+        questions: {
+          guestChannel: val('q-guests'),
+          rsvpCadence: val('q-rsvp'),
+          kitchenTimers: val('q-kitchen'),
+          permissionTiming: val('q-permission'),
+        },
+        notes: notesEl ? notesEl.value : '',
+      };
+    }
+
+    function val(name) {
+      const el = document.querySelector('input[name="' + name + '"]:checked');
+      return el ? el.value : null;
+    }
+
+    function tally() {
+      const data = collect();
+      const ship = data.items.filter(function (i) { return i.shipV1; }).length;
+      const push = data.items.filter(function (i) { return i.channel === 'push' && i.shipV1; }).length;
+      const el = document.getElementById('tally');
+      el.textContent = ship + ' marked for v1 · ' + push + ' of those are lock-screen push';
+    }
+
+    document.getElementById('picks').addEventListener('change', tally);
+    tally();
+
+    document.getElementById('submit').addEventListener('click', async function () {
+      await submitToClaude({
+        skill: 'html-throwaway-editor',
+        kind: 'notification-picks',
+        data: collect(),
+        version: 1,
+      });
+    });
+  </script>
+</body>
+</html>

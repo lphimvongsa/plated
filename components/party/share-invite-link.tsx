@@ -1,6 +1,7 @@
 "use client";
 
 import { rotateShareToken } from "@/lib/actions/parties";
+import { usePartyAccess } from "@/lib/party/access-client";
 import { Check, Copy, Link2, RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -33,6 +34,7 @@ export function CopyShareLinkButton({ token }: { token: string }) {
 }
 
 export function ShareInviteCard({ partyId, token }: { partyId: string; token: string }) {
+  const { canEdit } = usePartyAccess();
   const router = useRouter();
   const [shareToken, setShareToken] = useState(token);
   const [copied, setCopied] = useState(false);
@@ -71,7 +73,7 @@ export function ShareInviteCard({ partyId, token }: { partyId: string; token: st
       <p className="font-handwritten text-sm text-tomato">Group chat</p>
       <h3 className="mt-2 font-editorial text-3xl font-semibold">One link for everyone.</h3>
       <p className="mt-3 text-xs leading-relaxed text-ink/50">
-        Paste this in a text thread. Guests open the invitation, add their name, and RSVP — no private link per person.
+        Paste this in the group chat. Everyone opens the same invitation link, adds their name, and RSVPs.
       </p>
       <div className="mt-4 flex gap-2">
         <input className="field" readOnly value={path} />
@@ -80,11 +82,13 @@ export function ShareInviteCard({ partyId, token }: { partyId: string; token: st
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
+      {canEdit ? (
       <button type="button" className="mt-3 text-[10px] font-bold uppercase tracking-widest text-ink/35 hover:text-tomato" disabled={pending} onClick={rotate}>
         <span className="inline-flex items-center gap-1.5">
           <RefreshCw size={11} /> {pending ? "Resetting…" : "Reset link"}
         </span>
       </button>
+      ) : null}
       {status ? <p className="mt-3 border border-olive/25 bg-olive/10 px-3 py-2 text-xs font-semibold text-olive">{status}</p> : null}
       {error ? <p className="mt-3 border border-tomato/25 bg-tomato/10 px-3 py-2 text-xs font-semibold text-tomato">{error}</p> : null}
     </article>

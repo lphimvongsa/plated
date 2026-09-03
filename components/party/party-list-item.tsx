@@ -1,6 +1,7 @@
 "use client";
 
 import { deleteParty } from "@/lib/actions/parties";
+import { formatPartyRole } from "@/lib/party/roles";
 import { ArrowRight, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { CroppedImage } from "@/components/media/cropped-image";
@@ -58,7 +59,7 @@ export function PartyListItem({
             <span>
               {attending} attending · {dishes} dish{dishes === 1 ? "" : "es"}
             </span>
-            {role ? <span>You are {role}</span> : null}
+            {role ? <span>You are {formatPartyRole(role)}</span> : null}
           </p>
         </div>
       </Link>

@@ -3,22 +3,17 @@
 import { Brand } from "@/components/brand";
 import { completeOnboarding } from "@/lib/actions/onboarding";
 import { pantryStaples } from "@/lib/mock-data";
+import { AMERICAN_TIMEZONES, DEFAULT_TIMEZONE } from "@/lib/timezone";
 import { ArrowLeft, ArrowRight, Check, ChefHat, Gauge, Ruler } from "lucide-react";
 import { useState, useTransition } from "react";
 
 const steps = ["Basics", "Kitchen", "Pantry"];
 
-const timezoneOptions = [
-  { label: "Eastern Time (US & Canada)", value: "America/New_York" },
-  { label: "Central Time (US & Canada)", value: "America/Chicago" },
-  { label: "Pacific Time (US & Canada)", value: "America/Los_Angeles" },
-];
-
 export default function OnboardingPage() {
   const [step, setStep] = useState(0);
   const [measurement, setMeasurement] = useState("US");
   const [skill, setSkill] = useState("Intermediate");
-  const [timezone, setTimezone] = useState("America/New_York");
+  const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE);
   const [selected, setSelected] = useState<string[]>(["Kosher salt", "Black pepper", "Olive oil", "Garlic"]);
   const [customStaple, setCustomStaple] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -107,7 +102,7 @@ export default function OnboardingPage() {
                 <label className="mt-7 block">
                   <span className="mb-2 block text-[9px] font-bold uppercase tracking-[0.12em]">Timezone</span>
                   <select className="field" value={timezone} onChange={(e) => setTimezone(e.target.value)}>
-                    {timezoneOptions.map((option) => (
+                    {AMERICAN_TIMEZONES.map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
                       </option>

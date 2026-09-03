@@ -1,36 +1,20 @@
+import { Brand } from "@/components/brand";
 import { InviteExperience } from "@/components/invite/invite-experience";
 import { loadInvite } from "@/lib/actions/invite";
-import { Brand } from "@/components/brand";
-import { shareRsvpCookieName, siteUrl } from "@/lib/site";
-import { cookies } from "next/headers";
+import { siteUrl } from "@/lib/site";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 
 export default async function InvitePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const invite = await loadInvite(token);
-
-  if (invite.kind === "share") {
-    const personal = (await cookies()).get(shareRsvpCookieName(token))?.value;
-    if (personal && personal !== token) {
-      const existing = await loadInvite(personal);
-      if (existing.party && existing.guest?.id && existing.status !== "revoked") {
-        redirect(`/invite/${personal}`);
-      }
-    }
-  }
 
   if (invite.status === "revoked" || !invite.party) {
     return (
       <main className="paper-noise flex min-h-screen flex-col items-center justify-center bg-[#eee4d4] px-5 text-center text-ink">
         <Brand compact />
         <h1 className="mt-10 font-editorial text-5xl font-semibold tracking-[-0.04em] text-tomato">This invitation is no longer available.</h1>
-        <p className="mt-4 max-w-md text-sm leading-relaxed text-ink/55">
-          The link may have been revoked, replaced, or the dinner was removed. Ask your host for a fresh invite.
-        </p>
-        <Link href="/" className="btn-secondary mt-8">
-          Visit plated.
-        </Link>
+        <p className="mt-4 max-w-md text-sm leading-relaxed text-ink/55">The group link may have been reset or the dinner was removed. Ask your host for the current party link.</p>
+        <Link href="/" className="btn-secondary mt-8">Visit plated.</Link>
       </main>
     );
   }

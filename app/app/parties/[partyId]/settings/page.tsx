@@ -25,6 +25,7 @@ export default async function PartySettingsPage({ params }: { params: Promise<{ 
         planning_guest_count: party.planning_guest_count,
         date: toDateInputValue(party.starts_at, party.timezone),
         time: toTimeInputValue(party.starts_at, party.timezone),
+        timezone: party.timezone,
         duration_minutes: durationMinutesBetween(party.starts_at, party.ends_at),
         prep_date: toDateInputValue(party.prep_starts_at ?? party.starts_at, party.timezone),
         hero_image: party.hero_image,
@@ -32,6 +33,8 @@ export default async function PartySettingsPage({ params }: { params: Promise<{ 
         cover_crop: party.cover_crop,
         color_scheme: party.color_scheme,
         invitation_photo_urls: party.invitation_photo_urls ?? [],
+        invitation_photo_positions: party.invitation_photo_positions ?? [],
+        invitation_photo_crops: party.invitation_photo_crops ?? [],
       }}
     />
   );

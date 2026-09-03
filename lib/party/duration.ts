@@ -1,3 +1,5 @@
+import { zonedDateTimeToUtc } from "@/lib/timezone";
+
 export const DEFAULT_PARTY_DURATION_MINUTES = 180;
 
 export const PARTY_DURATION_OPTIONS: { minutes: number; label: string }[] = [
@@ -54,11 +56,12 @@ export function formatPartyDuration(minutes: number) {
   return rest === 30 ? `${hours}.5 hours` : `${hours === 1 ? "1 hour" : `${hours} hours`} ${rest} min`;
 }
 
-export function formatPartyEndClock(date: string, time: string, durationMinutes: number) {
-  const start = new Date(`${date}T${time}:00`);
-  if (Number.isNaN(start.getTime())) return "—";
+export function formatPartyEndClock(date: string, time: string, durationMinutes: number, timeZone?: string) {
+  const start = timeZone ? zonedDateTimeToUtc(date, time, timeZone) : new Date(`${date}T${time}:00`);
+  if (!start || Number.isNaN(start.getTime())) return "—";
   return new Intl.DateTimeFormat("en-US", {
     hour: "numeric",
     minute: "2-digit",
+    ...(timeZone ? { timeZone } : {}),
   }).format(partyEndsAt(start, durationMinutes));
 }

@@ -3,6 +3,7 @@ import { TimelineSyncBanner } from "@/components/party/timeline-sync-banner";
 import { formatPartyWhen } from "@/lib/calendar";
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
+import { isDurationScalingMode } from "@/lib/timeline/duration-scaling";
 
 const PARTY_FIELDS = "id, starts_at, ends_at, prep_starts_at, timezone, timeline_dirty";
 
@@ -28,6 +29,8 @@ export default async function TimelinePage({ params }: { params: Promise<{ party
       task,
       start_at,
       duration_minutes,
+      base_duration_minutes,
+      duration_scaling_mode,
       status,
       difficulty,
       assigned_name,
@@ -99,6 +102,8 @@ export default async function TimelinePage({ params }: { params: Promise<{ party
       description: row.description,
       start_at: row.start_at,
       duration_minutes: row.duration_minutes,
+      base_duration_minutes: row.base_duration_minutes,
+      duration_scaling_mode: isDurationScalingMode(row.duration_scaling_mode) ? row.duration_scaling_mode : null,
       status: row.status,
       difficulty: row.difficulty,
       assigned_name: row.assigned_name,

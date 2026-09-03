@@ -1,18 +1,20 @@
 "use client";
 
 import { Brand } from "@/components/brand";
-import { CroppedImage } from "@/components/media/cropped-image";
+import { OverviewPolaroids } from "@/components/invite/overview-polaroids";
+import { PolaroidPhoto } from "@/components/invite/polaroid-photo";
 import { PartyThemeBridge } from "@/components/party-theme-bridge";
-import { cropArrayFromJson } from "@/lib/media/crop";
+import { cropArrayFromJson, photoCaptionArrayFromJson } from "@/lib/media/crop";
 import { submitRsvp } from "@/lib/actions/invite";
 import { formatPartyWhen, googleCalendarUrl } from "@/lib/calendar";
 import { DEFAULT_PARTY_DURATION_MINUTES, partyEndsAt } from "@/lib/party/duration";
 import { inviteCalendarEvent } from "@/lib/outbound/invite";
 import type { InvitePayload } from "@/lib/database.types";
+import { DEFAULT_INVITATION_SLOTS, normalizeInvitationPhotoSlot, type InvitationPhotoSlot } from "@/lib/invitation-photo-slots";
 import { partyThemeCssVars } from "@/lib/party/themes";
 import { parseAllergyList, serializeAllergyList } from "@/lib/rsvp";
 import { MAJOR_ALLERGENS, allergenDisplayName } from "@/lib/allergens";
-import { CalendarPlus, Check, ChevronDown, Download, MapPin, PartyPopper, Plus, Sparkles, Wine, X } from "lucide-react";
+import { CalendarPlus, Check, ChevronDown, MapPin, PartyPopper, Plus, Sparkles, Wine, X } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 
@@ -40,7 +42,6 @@ const emptyGuest = {
 };
 
 export function InviteExperience({ token, initial, origin }: Props) {
-  const [activeToken, setActiveToken] = useState(token);
   const [invite, setInvite] = useState(initial);
   const [submitted, setSubmitted] = useState(
     Boolean(initial.guest && initial.guest.rsvp_status !== "no_response"),
@@ -54,9 +55,25 @@ export function InviteExperience({ token, initial, origin }: Props) {
   const { date, time } = formatPartyWhen(party.starts_at, party.timezone);
   const photos = party.invitation_photo_urls?.length ? party.invitation_photo_urls : [party.hero_image || "/photos/party-01.webp"];
   const photoCrops = cropArrayFromJson(party.invitation_photo_crops, photos.length);
+  const photoCaptions = photoCaptionArrayFromJson(party.invitation_photo_crops, photos.length);
   const headline = party.invitation_headline || party.name;
   const introMessage = party.invitation_message || party.description || "Dinner, drinks, and a table worth lingering around.";
   const signoff = party.invitation_signoff || "Come hungry. Stay late.";
+
+  const usedSlots = new Set<InvitationPhotoSlot>();
+  const slots = photos.map((_: string, i: number) => {
+    const preferred = normalizeInvitationPhotoSlot(party.invitation_photo_positions?.[i] ?? "", i);
+    const slot = usedSlots.has(preferred)
+      ? DEFAULT_INVITATION_SLOTS.find((candidate) => !usedSlots.has(candidate))
+      : preferred;
+    if (!slot || usedSlots.has(slot)) return null;
+    usedSlots.add(slot);
+    return slot;
+  });
+  const photoAt = (slot: InvitationPhotoSlot) => { const index = slots.findIndex((value) => value === slot); return index >= 0 ? { src: photos[index], crop: photoCrops[index], caption: photoCaptions[index] || "" } : null; };
+  const overviewPhoto = photoAt("overview_left");
+  const overviewRight = photoAt("overview_right");
+  const menuLeft = photoAt("menu_left"); const menuRight = photoAt("menu_right"); const rsvpBottom = photoAt("rsvp_bottom");
   const rsvpLabel = party.invitation_rsvp_label || "RSVP to dinner";
 
   const [name, setName] = useState(guest.name ?? "");
@@ -83,13 +100,12 @@ export function InviteExperience({ token, initial, origin }: Props) {
           invitationMessage: party.invitation_message,
           invitationHeadline: party.invitation_headline,
         },
-        `${origin.replace(/\/$/, "")}/invite/${activeToken}`,
+        `${origin.replace(/\/$/, "")}/invite/${token}`,
       ),
-    [party, activeToken, origin],
+    [party, token, origin],
   );
 
   const gcal = googleCalendarUrl(calendarEvent);
-  const icsHref = `/invite/${activeToken}/calendar`;
   const allergyOptions = useMemo(() => {
     const fromMenu = initial.allergy_options ?? [];
     const canonical = MAJOR_ALLERGENS.map((tag) => ({ kind: "allergen" as const, value: tag, label: allergenDisplayName(tag), allergens: [tag] }));
@@ -124,7 +140,7 @@ export function InviteExperience({ token, initial, origin }: Props) {
     setError(null);
     startTransition(async () => {
       const result = await submitRsvp({
-        token: activeToken,
+        token,
         name,
         rsvpStatus: rsvp,
         allergies: serializeAllergyList(allergies),
@@ -143,10 +159,6 @@ export function InviteExperience({ token, initial, origin }: Props) {
         );
         if (result.status === "soft_expired") setInvite(result);
         return;
-      }
-      if (result.personal_token && result.personal_token !== activeToken) {
-        window.history.replaceState(null, "", `/invite/${result.personal_token}`);
-        setActiveToken(result.personal_token);
       }
       setInvite(result);
       setSubmitted(true);
@@ -172,27 +184,8 @@ export function InviteExperience({ token, initial, origin }: Props) {
       ) : null}
 
       <section className="mx-auto grid max-w-7xl items-center gap-10 px-5 pb-20 pt-4 md:px-10 lg:grid-cols-[1.05fr_.95fr] lg:pt-10">
-        <div className="relative min-h-[610px] md:min-h-[760px]">
-          <div className="absolute left-0 top-3 h-[72%] w-[79%] -rotate-[2deg] bg-[#fffaf1] p-2 pb-10 shadow-paper">
-            <div className="relative h-full overflow-hidden">
-              <CroppedImage
-                src={photos[0] || party.hero_image || "/photos/party-01.webp"}
-                alt="Outdoor garden dinner party"
-                crop={photoCrops[0]}
-                className="h-full w-full"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-ink/25 to-transparent" />
-            </div>
-            <p className="absolute bottom-3 left-4 font-handwritten text-sm">{party.name.toLowerCase()}</p>
-          </div>
-          {photos[1] ? (
-            <div className="absolute bottom-0 right-0 h-[45%] w-[47%] rotate-[4deg] bg-[#fffaf1] p-2 pb-9 shadow-paper">
-              <div className="h-full overflow-hidden">
-                <CroppedImage src={photos[1]} alt="Dinner party detail" crop={photoCrops[1]} className="h-full w-full" />
-              </div>
-              <p className="absolute bottom-2 left-3 font-handwritten text-xs">come hungry</p>
-            </div>
-          ) : null}
+        <div className={overviewPhoto && overviewRight ? undefined : "min-h-[610px] md:min-h-[760px]"}>
+          <OverviewPolaroids left={overviewPhoto} right={overviewRight} />
         </div>
         <div className="lg:pl-4">
           <p className="font-handwritten text-xl text-tomato">You’re invited to</p>
@@ -226,9 +219,6 @@ export function InviteExperience({ token, initial, origin }: Props) {
             ) : null}
             <a href={gcal} target="_blank" rel="noreferrer" className="btn-secondary">
               <CalendarPlus size={16} /> {softExpired ? "View in Google Calendar" : "Add to Google Calendar"}
-            </a>
-            <a href={icsHref} className="btn-secondary">
-              <Download size={16} /> Apple / Outlook
             </a>
           </div>
         </div>
@@ -266,12 +256,7 @@ export function InviteExperience({ token, initial, origin }: Props) {
               <p className="mt-2 font-editorial text-2xl font-semibold">{party.guest_contribution_notes || "Just yourself"}</p>
             </article>
           </div>
-          {photos[2] || photos[3] ? (
-            <div className={`mt-4 grid gap-4 ${photos[2] && photos[3] ? "md:grid-cols-2" : "grid-cols-1"}`}>
-              {photos[2] ? <article className="overflow-hidden rounded-[1.5rem]"><CroppedImage src={photos[2]} alt="Menu detail" crop={photoCrops[2]} className="h-72 w-full" /></article> : null}
-              {photos[3] ? <article className="overflow-hidden rounded-[1.5rem]"><CroppedImage src={photos[3]} alt="Table detail" crop={photoCrops[3]} className="h-72 w-full" /></article> : null}
-            </div>
-          ) : null}
+          {menuLeft || menuRight ? <div className="mt-8 grid grid-cols-[2fr_1fr] items-center gap-5">{menuLeft ? <PolaroidPhoto src={menuLeft.src} crop={menuLeft.crop} caption={menuLeft.caption} alt="Menu detail" className="w-3/4 -rotate-[1deg]" /> : <div/>}{menuRight ? <PolaroidPhoto src={menuRight.src} crop={menuRight.crop} caption={menuRight.caption} alt="Table detail" className="rotate-[1deg]" /> : <div/>}</div> : null}
         </div>
       </section>
 
@@ -281,7 +266,7 @@ export function InviteExperience({ token, initial, origin }: Props) {
             <p className="font-handwritten text-xl text-tomato">Save your seat</p>
             <h2 className="mt-3 font-editorial text-5xl font-semibold leading-[.9] sm:text-6xl">Will you join us?</h2>
             <p className="mt-5 max-w-sm text-sm leading-relaxed text-ink/55">Your response helps the kitchen scale the recipes. Choose allergies from the menu-aware list so the kitchen can match them reliably.</p>
-            {photos[4] ? <div className="mt-8 overflow-hidden rounded-[1.5rem] bg-paper-2 p-2 shadow-paper"><CroppedImage src={photos[4]} alt="RSVP dinner detail" crop={photoCrops[4]} className="h-72 w-full" /></div> : null}
+            {rsvpBottom ? <PolaroidPhoto src={rsvpBottom.src} crop={rsvpBottom.crop} caption={rsvpBottom.caption} alt="RSVP dinner detail" className="mt-8 rotate-[1deg]" imageClassName="h-72 w-full" /> : null}
           </div>
           <div className="card p-6 md:p-8">
             {softExpired ? (
@@ -391,9 +376,6 @@ export function InviteExperience({ token, initial, origin }: Props) {
                 <div className="mt-7 flex flex-wrap justify-center gap-3">
                   <a href={gcal} target="_blank" rel="noreferrer" className="btn-secondary">
                     <CalendarPlus size={16} /> Add to Google Calendar
-                  </a>
-                  <a href={icsHref} className="btn-secondary">
-                    <Download size={16} /> Apple / Outlook
                   </a>
                   <button className="btn-secondary" onClick={() => setSubmitted(false)}>
                     Edit response

@@ -1,5 +1,7 @@
 "use client";
 
+import { NotificationBridge } from "@/components/notification-bridge";
+
 import { Brand } from "@/components/brand";
 import { Bell, BookOpen, CalendarDays, ChefHat, Home, Plus, Settings } from "lucide-react";
 import Link from "next/link";
@@ -38,7 +40,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
   return (
-    <div className="editorial-app min-h-screen bg-paper text-ink">
+    <>
+      <NotificationBridge />
+      <div className="editorial-app min-h-screen bg-paper text-ink">
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-[228px] border-r border-ink/15 bg-paper-2 lg:flex lg:flex-col">
         <div className="border-b border-ink/15 px-6 py-7">
           <Brand compact />
@@ -119,5 +123,6 @@ export function AppShell({ children }: { children: ReactNode }) {
         })}
       </nav>
     </div>
+    </>
   );
 }
