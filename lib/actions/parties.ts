@@ -44,7 +44,13 @@ export async function createParty(formData: FormData) {
   const guestContributionNotes = String(formData.get("guest_contribution_notes") ?? "").trim();
   const guestCount = Number(formData.get("guest_count") ?? 8);
   const durationMinutes = parsePartyDurationMinutes(formData.get("duration_minutes"));
-  const startsAt = new Date(`${date}T${time}:00`);
+  const timezone = normalizeTimezone(String(formData.get("timezone") ?? ""));
+  const startsAt =
+    zonedDateTimeToUtc(date, time, timezone) ??
+    (() => {
+      const fallback = new Date(`${date}T${time}:00`);
+      return Number.isNaN(fallback.getTime()) ? new Date() : fallback;
+    })();
   const prepLeadDays = Number(formData.get("prep_lead_days") ?? 14);
   const colorScheme = String(formData.get("color_scheme") ?? "tomato-cream");
   const coverPosition = String(formData.get("cover_position") ?? "50% 50%");
@@ -61,6 +67,7 @@ export async function createParty(formData: FormData) {
       ends_at: partyEndsAt(startsAt, durationMinutes).toISOString(),
       prep_starts_at: prepStartFromLead(startsAt, prepLeadDays).toISOString(),
       location,
+      timezone,
       theme,
       cuisine,
       service_style: serviceStyle,
@@ -73,6 +80,7 @@ export async function createParty(formData: FormData) {
       cover_position: coverPosition,
       cover_crop: coverCrop,
       invitation_photo_urls: [heroChoice || "/photos/party-01.webp"],
+      invitation_photo_positions: ["overview_left"],
       invitation_draft: true,
     })
     .select("id")
@@ -441,7 +449,12 @@ export async function duplicateParty(partyId: string) {
   const { data: source, error: sourceError } = await supabase.from("parties").select("*").eq("id", partyId).maybeSingle();
   if (sourceError || !source) return { error: sourceError?.message ?? "Party not found." };
   const { id: _id, created_at: _created, updated_at: _updated, share_token: _share, ...copy } = source as any;
-  const { data: created, error } = await supabase.from("parties").insert({ ...copy, name: `${source.name} copy`, status: "planning", share_token: null }).select("id").single();
+  // Omit share_token so the DB default generates a fresh group invite link.
+  const { data: created, error } = await supabase
+    .from("parties")
+    .insert({ ...copy, name: `${source.name} copy`, status: "planning" })
+    .select("id")
+    .single();
   if (error || !created) return { error: error?.message ?? "Could not duplicate party." };
   revalidatePath("/app/parties");
   redirect(`/app/parties/${created.id}/settings`);

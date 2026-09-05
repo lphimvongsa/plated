@@ -1,4 +1,4 @@
-import { DEFAULT_TIMEZONE } from "@/lib/timezone";
+import { DEFAULT_TIMEZONE, normalizeTimezone } from "@/lib/timezone";
 
 export type CalendarEvent = {
   title: string;
@@ -91,17 +91,37 @@ export function icsDataUri(event: CalendarEvent) {
 }
 
 export function formatPartyWhen(startsAt: string, timeZone = DEFAULT_TIMEZONE) {
+  const zone = normalizeTimezone(timeZone);
   const start = new Date(startsAt);
-  const date = new Intl.DateTimeFormat("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    timeZone,
-  }).format(start);
-  const time = new Intl.DateTimeFormat("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone,
-  }).format(start);
-  return { date, time };
+  if (Number.isNaN(start.getTime())) {
+    return { date: "Date TBD", time: "Time TBD" };
+  }
+  try {
+    const date = new Intl.DateTimeFormat("en-US", {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      timeZone: zone,
+    }).format(start);
+    const time = new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: zone,
+    }).format(start);
+    return { date, time };
+  } catch {
+    // Invalid IANA zones throw RangeError and would crash the invite page SSR.
+    const date = new Intl.DateTimeFormat("en-US", {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      timeZone: DEFAULT_TIMEZONE,
+    }).format(start);
+    const time = new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: DEFAULT_TIMEZONE,
+    }).format(start);
+    return { date, time };
+  }
 }
