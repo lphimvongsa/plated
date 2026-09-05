@@ -34,8 +34,27 @@ exception
   when duplicate_object then null;
 end $$;
 
-drop function if exists public.queue_rsvp_notification(uuid, text);
-drop function if exists public.queue_rsvp_notification(uuid, text, text);
+-- Drop every overload of queue_rsvp_notification without hard-coding
+-- (uuid, text), which raises 42883 when that signature is absent.
+do $$
+declare
+  r record;
+begin
+  for r in
+    select pg_catalog.format(
+      '%I.%I(%s)',
+      n.nspname,
+      p.proname,
+      pg_catalog.pg_get_function_identity_arguments(p.oid)
+    ) as sig
+    from pg_catalog.pg_proc p
+    join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname = 'queue_rsvp_notification'
+  loop
+    execute 'drop function if exists ' || r.sig;
+  end loop;
+end $$;
 
 create or replace function public.queue_rsvp_notification(
   p_party_id uuid,
@@ -139,8 +158,8 @@ begin
 end;
 $$;
 
--- With a DEFAULT on the 3rd arg there is only one function OID: (uuid, text, text).
--- Granting (uuid, text) fails with 42883 because that signature does not exist.
+-- Only the 3-arg signature exists (3rd param has a DEFAULT).
+-- Do NOT grant on queue_rsvp_notification(uuid, text) — that OID does not exist.
 grant execute on function public.queue_rsvp_notification(uuid, text, text) to anon, authenticated;
 grant execute on function public.queue_collaborator_invite_notification(text, uuid) to authenticated;
 grant execute on function public.queue_collaborator_accept_notification(uuid, uuid, text) to authenticated;
