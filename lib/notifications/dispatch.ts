@@ -8,6 +8,8 @@ type NotificationEvent = {
   actorName?: string;
   guestName?: string;
   rsvpStatus?: string;
+  /** When false, the edge function only delivers push (inbox row already persisted). */
+  persist?: boolean;
 };
 
 export async function dispatchNotification(event: NotificationEvent) {

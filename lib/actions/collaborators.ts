@@ -4,9 +4,33 @@ import { revalidatePath } from "next/cache";
 import { requirePartyManager } from "@/lib/party/access";
 import { sendEmail } from "@/lib/outbound/email";
 import { buildCollaboratorInviteEmail } from "@/lib/outbound/collaborator";
+import { dispatchNotification } from "@/lib/notifications/dispatch";
 import type { CollaboratorRole } from "@/lib/party/roles";
 import { createClient } from "@/lib/supabase/server";
 import type { Json } from "@/lib/database.types";
+
+async function queueCollaboratorInviteNotice(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  input: { email: string; partyId: string; actorName?: string },
+) {
+  let persisted = false;
+  try {
+    const { error } = await (supabase as any).rpc("queue_collaborator_invite_notification", {
+      p_email: input.email,
+      p_party_id: input.partyId,
+    });
+    persisted = !error;
+  } catch {
+    persisted = false;
+  }
+  void dispatchNotification({
+    event: "collaborator_invite",
+    partyId: input.partyId,
+    collaboratorEmail: input.email,
+    actorName: input.actorName,
+    persist: !persisted,
+  });
+}
 
 function isEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -115,7 +139,7 @@ export async function inviteCollaborator(partyId: string, formData: FormData) {
       .eq("id", pending.id);
     if (error) return { error: error.message };
     const sent = await sendInviteMail(supabase, { partyId, email, role, token });
-    await (supabase as any).rpc("queue_collaborator_invite_notification", { p_email: email, p_party_id: partyId }).catch(() => null);
+    await queueCollaboratorInviteNotice(supabase, { email, partyId, actorName: host.name ?? undefined });
     revalidateCollaborators(partyId);
     return sent.error ? { error: sent.error } : { error: null };
   }
@@ -135,7 +159,7 @@ export async function inviteCollaborator(partyId: string, formData: FormData) {
   if (error || !created) return { error: error?.message ?? "Could not create the invite." };
 
   const sent = await sendInviteMail(supabase, { partyId, email, role, token: created.token });
-  await (supabase as any).rpc("queue_collaborator_invite_notification", { p_email: email, p_party_id: partyId }).catch(() => null);
+  await queueCollaboratorInviteNotice(supabase, { email, partyId, actorName: host.name ?? undefined });
   revalidateCollaborators(partyId);
   if (sent.error) {
     return { error: `${sent.error} The invite is waiting in pending invites — you can resend it.` };
@@ -277,7 +301,24 @@ export async function acceptCollaboratorInvite(token: string) {
 
   const { data: { user } } = await supabase.auth.getUser();
   const { data: profile } = user ? await supabase.from("profiles").select("name").eq("id",user.id).maybeSingle() : { data: null };
-  if (inviteMeta?.invited_by) await (supabase as any).rpc("queue_collaborator_accept_notification", { p_party_id: result.party_id, p_invited_by: inviteMeta.invited_by, p_name: profile?.name || inviteMeta.email || "Collaborator" }).catch(() => null);
+  if (inviteMeta?.invited_by) {
+    let persisted = false;
+    try {
+      const { error: notifyError } = await (supabase as any).rpc("queue_collaborator_accept_notification", {
+        p_party_id: result.party_id,
+        p_invited_by: inviteMeta.invited_by,
+        p_name: profile?.name || inviteMeta.email || "Collaborator",
+      });
+      persisted = !notifyError;
+    } catch {
+      persisted = false;
+    }
+    void dispatchNotification({
+      event: "collaborator_accept",
+      inviteToken: token,
+      persist: !persisted,
+    });
+  }
   revalidateCollaborators(result.party_id);
   return { ok: true as const, error: null, partyId: result.party_id, status: "accepted" };
 }

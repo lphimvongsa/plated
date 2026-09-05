@@ -54,7 +54,7 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     self.registration.showNotification(data.title || "plated.", {
       body: data.body || "Dinner update",
-      data: { url: data.url || "/app" },
+      data: { url: data.url || data.href || "/app" },
       icon: "/icons/icon-192.png",
       badge: "/icons/icon-192.png",
     }),
