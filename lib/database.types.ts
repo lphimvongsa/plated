@@ -922,6 +922,22 @@ export type Database = {
         };
         Returns: Json;
       };
+      queue_rsvp_notification: {
+        Args: {
+          p_party_id: string;
+          p_guest_name: string;
+          p_rsvp_status?: string;
+        };
+        Returns: undefined;
+      };
+      queue_collaborator_invite_notification: {
+        Args: { p_email: string; p_party_id: string };
+        Returns: undefined;
+      };
+      queue_collaborator_accept_notification: {
+        Args: { p_party_id: string; p_invited_by: string; p_name: string };
+        Returns: undefined;
+      };
       cleanup_expired_parties: {
         Args: Record<string, never>;
         Returns: number;

@@ -1,6 +1,7 @@
 "use server";
 
 import type { InvitePayload } from "@/lib/database.types";
+import { dispatchNotification } from "@/lib/notifications/dispatch";
 import { createClient } from "@/lib/supabase/server";
 
 function revoked(error?: string): InvitePayload {
@@ -58,14 +59,27 @@ export async function submitRsvp(input: {
     }
 
     if (payload.ok && payload.party?.id) {
+      let persisted = false;
       try {
-        await (supabase as any).rpc("queue_rsvp_notification", {
+        const { error: notifyError } = await supabase.rpc("queue_rsvp_notification", {
           p_party_id: payload.party.id,
           p_guest_name: input.name,
+          p_rsvp_status: input.rsvpStatus,
         });
-      } catch {
-        // Notifications are best-effort and must never fail an RSVP.
+        persisted = !notifyError;
+        if (notifyError) console.error("[invite] queue_rsvp_notification failed", notifyError);
+      } catch (notifyError) {
+        console.error("[invite] queue_rsvp_notification threw", notifyError);
       }
+
+      // Push is best-effort. Skip re-inserting inbox rows when the RPC already persisted them.
+      void dispatchNotification({
+        event: "rsvp",
+        partyId: payload.party.id,
+        guestName: input.name,
+        rsvpStatus: input.rsvpStatus,
+        persist: !persisted,
+      });
     }
     return payload;
   } catch (error) {

@@ -10,9 +10,24 @@ type EventBody = {
   actorName?: string;
   guestName?: string;
   rsvpStatus?: string;
+  /** Defaults to true. Set false when the app already wrote the inbox row via RPC. */
+  persist?: boolean;
 };
 
 const cors = { "content-type": "application/json" };
+
+function rsvpLabel(status?: string) {
+  switch (status) {
+    case "attending":
+      return "Attending";
+    case "maybe":
+      return "Maybe";
+    case "not_attending":
+      return "Can’t make it";
+    default:
+      return status || "Response received";
+  }
+}
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response(JSON.stringify({ error: "method" }), { status: 405, headers: cors });
@@ -35,15 +50,19 @@ Deno.serve(async (req) => {
   if (body.event === "rsvp" && body.partyId) {
     const [{ data: party }, { data: members }] = await Promise.all([
       supabase.from("parties").select("id,name,owner_id").eq("id", body.partyId).maybeSingle(),
-      supabase.from("party_members").select("user_id,role").eq("party_id", body.partyId).in("role", ["owner","co_owner"]),
+      supabase.from("party_members").select("user_id,role").eq("party_id", body.partyId).in("role", ["owner", "co_owner"]),
     ]);
     if (party) {
       const ids = new Set<string>([party.owner_id, ...(members ?? []).map((m) => m.user_id)]);
-      for (const id of ids) targets.set(id, {
-        title: `${body.guestName || "A guest"} RSVP’d`,
-        body: `${body.rsvpStatus || "Response received"} · ${party.name}`,
-        href: `/app/parties/${party.id}/guests`, partyId: party.id, type: body.event,
-      });
+      for (const id of ids) {
+        targets.set(id, {
+          title: `${body.guestName || "A guest"} RSVP’d`,
+          body: `${rsvpLabel(body.rsvpStatus)} · ${party.name}`,
+          href: `/app/parties/${party.id}/guests`,
+          partyId: party.id,
+          type: body.event,
+        });
+      }
     }
   }
 
@@ -52,16 +71,23 @@ Deno.serve(async (req) => {
       supabase.from("profiles").select("id,profile_discoverable").ilike("email", body.collaboratorEmail).maybeSingle(),
       supabase.from("parties").select("id,name").eq("id", body.partyId).maybeSingle(),
     ]);
-    if (profile?.profile_discoverable && party) targets.set(profile.id, {
-      title: "New collaborator invitation",
-      body: `${body.actorName || "A host"} invited you to ${party.name}.`,
-      href: "/app/inbox", partyId: party.id, type: body.event,
-    });
+    if (profile?.profile_discoverable && party) {
+      targets.set(profile.id, {
+        title: "New collaborator invitation",
+        body: `${body.actorName || "A host"} invited you to ${party.name}.`,
+        href: "/app/inbox",
+        partyId: party.id,
+        type: body.event,
+      });
+    }
   }
 
   if (body.event === "collaborator_accept" && body.inviteToken) {
-    const { data: invite } = await supabase.from("party_collaborator_invites")
-      .select("party_id,invited_by,email").eq("token", body.inviteToken).maybeSingle();
+    const { data: invite } = await supabase
+      .from("party_collaborator_invites")
+      .select("party_id,invited_by,email")
+      .eq("token", body.inviteToken)
+      .maybeSingle();
     if (invite) {
       const [{ data: party }, { data: owner }] = await Promise.all([
         supabase.from("parties").select("id,name,owner_id").eq("id", invite.party_id).maybeSingle(),
@@ -69,25 +95,53 @@ Deno.serve(async (req) => {
       ]);
       if (party) {
         const ids = new Set<string>([invite.invited_by, party.owner_id]);
-        for (const id of ids) targets.set(id, {
-          title: "Collaborator accepted",
-          body: `${owner?.name || invite.email} joined ${party.name}.`,
-          href: `/app/parties/${party.id}/settings`, partyId: party.id, type: body.event,
-        });
+        for (const id of ids) {
+          targets.set(id, {
+            title: "Collaborator accepted",
+            body: `${owner?.name || invite.email} joined ${party.name}.`,
+            href: `/app/parties/${party.id}/settings`,
+            partyId: party.id,
+            type: body.event,
+          });
+        }
       }
     }
   }
 
+  const shouldPersist = body.persist !== false;
   let pushed = 0;
   for (const [userId, note] of targets) {
-    const { data: profile } = await supabase.from("profiles").select("notification_master,notify_rsvps,notify_collaborator_invites,notify_collaborator_accepts").eq("id", userId).maybeSingle();
-    const preference = note.type === "rsvp" ? profile?.notify_rsvps : note.type === "collaborator_invite" ? profile?.notify_collaborator_invites : profile?.notify_collaborator_accepts;
-    await supabase.from("notifications").insert({ user_id: userId, party_id: note.partyId, type: note.type, title: note.title, body: note.body, href: note.href });
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("notification_master,notify_rsvps,notify_collaborator_invites,notify_collaborator_accepts")
+      .eq("id", userId)
+      .maybeSingle();
+    const preference =
+      note.type === "rsvp"
+        ? profile?.notify_rsvps
+        : note.type === "collaborator_invite"
+          ? profile?.notify_collaborator_invites
+          : profile?.notify_collaborator_accepts;
+
+    if (shouldPersist) {
+      await supabase.from("notifications").insert({
+        user_id: userId,
+        party_id: note.partyId,
+        type: note.type,
+        title: note.title,
+        body: note.body,
+        href: note.href,
+      });
+    }
+
     if (!profile?.notification_master || preference === false || !publicKey || !privateKey) continue;
     const { data: subs } = await supabase.from("push_subscriptions").select("id,endpoint,p256dh,auth").eq("user_id", userId);
     for (const sub of subs ?? []) {
       try {
-        await webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, JSON.stringify(note));
+        await webpush.sendNotification(
+          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+          JSON.stringify({ ...note, url: note.href }),
+        );
         pushed++;
       } catch (error) {
         const status = (error as { statusCode?: number }).statusCode;
