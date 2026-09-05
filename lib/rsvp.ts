@@ -1,4 +1,4 @@
-import { DEFAULT_TIMEZONE } from "@/lib/timezone";
+import { DEFAULT_TIMEZONE, normalizeTimezone } from "@/lib/timezone";
 
 const RSVP_LABELS: Record<string, string> = {
   attending: "Attending",
@@ -53,7 +53,7 @@ export function formatMinutes(minutes: number | null | undefined) {
 
 export function toDateInputValue(iso: string, timeZone = DEFAULT_TIMEZONE) {
   return new Intl.DateTimeFormat("en-CA", {
-    timeZone,
+    timeZone: normalizeTimezone(timeZone),
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -62,7 +62,7 @@ export function toDateInputValue(iso: string, timeZone = DEFAULT_TIMEZONE) {
 
 export function toTimeInputValue(iso: string, timeZone = DEFAULT_TIMEZONE) {
   return new Intl.DateTimeFormat("en-GB", {
-    timeZone,
+    timeZone: normalizeTimezone(timeZone),
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,

@@ -41,28 +41,74 @@ const emptyGuest = {
   notes: null as string | null,
 };
 
+function normalizeAllergyOptions(
+  raw: InvitePayload["allergy_options"],
+): Array<{ kind: "allergen" | "ingredient"; value: string; label: string; allergens: string[] }> {
+  const fromMenu = Array.isArray(raw) ? raw : [];
+  const canonical = MAJOR_ALLERGENS.map((tag) => ({
+    kind: "allergen" as const,
+    value: tag,
+    label: allergenDisplayName(tag),
+    allergens: [tag],
+  }));
+  const seen = new Set<string>();
+  return [...canonical, ...fromMenu]
+    .map((option) => ({
+      kind: option?.kind === "ingredient" ? ("ingredient" as const) : ("allergen" as const),
+      value: String(option?.value ?? ""),
+      label: String(option?.label ?? option?.value ?? ""),
+      allergens: Array.isArray(option?.allergens) ? option.allergens.map(String) : [],
+    }))
+    .filter((option) => {
+      if (!option.value && !option.label) return false;
+      const key = `${option.kind}:${option.value || option.label}`.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
 export function InviteExperience({ token, initial, origin }: Props) {
+  const initialGuest = initial.guest ?? emptyGuest;
   const [invite, setInvite] = useState(initial);
   const [submitted, setSubmitted] = useState(
     Boolean(initial.guest && initial.guest.rsvp_status !== "no_response"),
   );
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [name, setName] = useState(initialGuest.name ?? "");
+  const [rsvp, setRsvp] = useState<"attending" | "maybe" | "not_attending">(
+    initialGuest.rsvp_status === "maybe" ||
+      initialGuest.rsvp_status === "not_attending" ||
+      initialGuest.rsvp_status === "attending"
+      ? initialGuest.rsvp_status
+      : "attending",
+  );
+  const [plusOne, setPlusOne] = useState((initialGuest.plus_one_count ?? 0) > 0);
+  const [allergies, setAllergies] = useState<string[]>(parseAllergyList(initialGuest.allergies));
+  const [allergyQuery, setAllergyQuery] = useState("");
+  const [notes, setNotes] = useState(initialGuest.notes ?? "");
 
   const party = invite.party!;
   const guest = invite.guest ?? emptyGuest;
   const softExpired = invite.status === "soft_expired";
   const { date, time } = formatPartyWhen(party.starts_at, party.timezone);
-  const photos = party.invitation_photo_urls?.length ? party.invitation_photo_urls : [party.hero_image || "/photos/party-01.webp"];
+  const photos = Array.isArray(party.invitation_photo_urls) && party.invitation_photo_urls.length
+    ? party.invitation_photo_urls.filter(Boolean)
+    : [party.hero_image || "/photos/party-01.webp"];
   const photoCrops = cropArrayFromJson(party.invitation_photo_crops, photos.length);
   const photoCaptions = photoCaptionArrayFromJson(party.invitation_photo_crops, photos.length);
   const headline = party.invitation_headline || party.name;
   const introMessage = party.invitation_message || party.description || "Dinner, drinks, and a table worth lingering around.";
   const signoff = party.invitation_signoff || "Come hungry. Stay late.";
+  const slotSource =
+    Array.isArray(party.invitation_photo_slots) && party.invitation_photo_slots.length
+      ? party.invitation_photo_slots
+      : party.invitation_photo_positions;
 
   const usedSlots = new Set<InvitationPhotoSlot>();
   const slots = photos.map((_: string, i: number) => {
-    const preferred = normalizeInvitationPhotoSlot(party.invitation_photo_positions?.[i] ?? "", i);
+    const preferred = normalizeInvitationPhotoSlot(slotSource?.[i] ?? "", i);
     const slot = usedSlots.has(preferred)
       ? DEFAULT_INVITATION_SLOTS.find((candidate) => !usedSlots.has(candidate))
       : preferred;
@@ -70,22 +116,17 @@ export function InviteExperience({ token, initial, origin }: Props) {
     usedSlots.add(slot);
     return slot;
   });
-  const photoAt = (slot: InvitationPhotoSlot) => { const index = slots.findIndex((value) => value === slot); return index >= 0 ? { src: photos[index], crop: photoCrops[index], caption: photoCaptions[index] || "" } : null; };
+  const photoAt = (slot: InvitationPhotoSlot) => {
+    const index = slots.findIndex((value) => value === slot);
+    return index >= 0 ? { src: photos[index], crop: photoCrops[index], caption: photoCaptions[index] || "" } : null;
+  };
   const overviewPhoto = photoAt("overview_left");
   const overviewRight = photoAt("overview_right");
-  const menuLeft = photoAt("menu_left"); const menuRight = photoAt("menu_right"); const rsvpBottom = photoAt("rsvp_bottom");
+  const menuLeft = photoAt("menu_left");
+  const menuRight = photoAt("menu_right");
+  const rsvpBottom = photoAt("rsvp_bottom");
   const rsvpLabel = party.invitation_rsvp_label || "RSVP to dinner";
-
-  const [name, setName] = useState(guest.name ?? "");
-  const [rsvp, setRsvp] = useState<"attending" | "maybe" | "not_attending">(
-    guest.rsvp_status === "maybe" || guest.rsvp_status === "not_attending" || guest.rsvp_status === "attending"
-      ? guest.rsvp_status
-      : "attending",
-  );
-  const [plusOne, setPlusOne] = useState((guest.plus_one_count ?? 0) > 0);
-  const [allergies, setAllergies] = useState<string[]>(parseAllergyList(guest.allergies));
-  const [allergyQuery, setAllergyQuery] = useState("");
-  const [notes, setNotes] = useState(guest.notes ?? "");
+  const menu = Array.isArray(invite.menu) ? invite.menu : [];
 
   const calendarEvent = useMemo(
     () =>
@@ -106,30 +147,23 @@ export function InviteExperience({ token, initial, origin }: Props) {
   );
 
   const gcal = googleCalendarUrl(calendarEvent);
-  const allergyOptions = useMemo(() => {
-    const fromMenu = initial.allergy_options ?? [];
-    const canonical = MAJOR_ALLERGENS.map((tag) => ({ kind: "allergen" as const, value: tag, label: allergenDisplayName(tag), allergens: [tag] }));
-    const seen = new Set<string>();
-    return [...canonical, ...fromMenu].filter((option) => {
-      const key = `${option.kind}:${option.value}`.toLowerCase();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }, [initial.allergy_options]);
+  const allergyOptions = useMemo(() => normalizeAllergyOptions(initial.allergy_options), [initial.allergy_options]);
   const allergySuggestions = useMemo(() => {
     const query = allergyQuery.trim().toLowerCase();
     if (!query) return [];
     return allergyOptions
       .filter((option) => !allergies.some((selected) => selected.toLowerCase() === option.label.toLowerCase()))
-      .filter((option) => `${option.label} ${option.value} ${option.allergens.join(" ")}`.toLowerCase().includes(query))
+      .filter((option) =>
+        `${option.label} ${option.value} ${option.allergens.join(" ")}`.toLowerCase().includes(query),
+      )
       .slice(0, 8);
   }, [allergyOptions, allergyQuery, allergies]);
 
   function addAllergyOption(option: (typeof allergyOptions)[number]) {
-    const additions = option.kind === "ingredient"
-      ? [option.label, ...option.allergens.map(allergenDisplayName)]
-      : [option.label];
+    const additions =
+      option.kind === "ingredient"
+        ? [option.label, ...option.allergens.map(allergenDisplayName)]
+        : [option.label];
     setAllergies((current) => Array.from(new Set([...current, ...additions].filter(Boolean))));
     setAllergyQuery("");
   }
@@ -233,8 +267,8 @@ export function InviteExperience({ token, initial, origin }: Props) {
               <p className="mt-5 font-handwritten text-lg text-orange">{signoff}</p>
             </div>
             <div className="divide-y divide-paper/15 border-y border-paper/15">
-              {(invite.menu ?? []).map((dish) => (
-                <article key={`${dish.course}-${dish.title}`} className="grid gap-2 py-6 sm:grid-cols-[150px_1fr]">
+              {menu.map((dish, index) => (
+                <article key={`${dish.id ?? index}-${dish.course}-${dish.title}`} className="grid gap-2 py-6 sm:grid-cols-[150px_1fr]">
                   <p className="text-xs font-bold uppercase tracking-widest text-orange">{dish.course}</p>
                   <div>
                     <h3 className="font-editorial text-3xl font-semibold">{dish.title}</h3>
