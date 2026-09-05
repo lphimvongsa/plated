@@ -139,7 +139,8 @@ begin
 end;
 $$;
 
+-- With a DEFAULT on the 3rd arg there is only one function OID: (uuid, text, text).
+-- Granting (uuid, text) fails with 42883 because that signature does not exist.
 grant execute on function public.queue_rsvp_notification(uuid, text, text) to anon, authenticated;
-grant execute on function public.queue_rsvp_notification(uuid, text) to anon, authenticated;
 grant execute on function public.queue_collaborator_invite_notification(text, uuid) to authenticated;
 grant execute on function public.queue_collaborator_accept_notification(uuid, uuid, text) to authenticated;
